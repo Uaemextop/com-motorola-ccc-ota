@@ -6,9 +6,9 @@
 # static fields
 .field public static final APPLICATION_ID:Ljava/lang/String; = "com.motorola.ccc.ota"
 
-.field public static final BUILD_TYPE:Ljava/lang/String; = "release"
+.field public static final BUILD_TYPE:Ljava/lang/String; = "debug"
 
-.field public static final DEBUG:Z = false
+.field public static final DEBUG:Z = true
 
 .field public static final VERSION_CODE:I = 0x35683e
 
