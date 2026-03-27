@@ -869,7 +869,7 @@ def _cmd_debug_server(args: argparse.Namespace) -> int:
     # -- Summary -----------------------------------------------------------
     print()
     print("=" * 72)
-    print("  ENDPOINT REFERENCE (verified by probing)")
+    print("  ENDPOINT REFERENCE (verified March 2026)")
     print("=" * 72)
     print("""
   Endpoint     Method  URL Pattern                                       Purpose
