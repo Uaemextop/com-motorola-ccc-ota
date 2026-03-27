@@ -48,9 +48,12 @@
     # Modified: Set isProductionDevice to false to allow dev/staging OTAs
     iput-boolean v0, p0, Lcom/motorola/otalib/main/checkUpdate/CheckRequestObj;->isProductionDevice:Z
 
-    iput-boolean v0, p0, Lcom/motorola/otalib/main/checkUpdate/CheckRequestObj;->forceDownload:Z
+    # Modified: Force download and install to bypass deferral timers
+    const/4 v1, 0x1
 
-    iput-boolean v0, p0, Lcom/motorola/otalib/main/checkUpdate/CheckRequestObj;->forceInstall:Z
+    iput-boolean v1, p0, Lcom/motorola/otalib/main/checkUpdate/CheckRequestObj;->forceDownload:Z
+
+    iput-boolean v1, p0, Lcom/motorola/otalib/main/checkUpdate/CheckRequestObj;->forceInstall:Z
 
     return-void
 .end method
@@ -511,11 +514,9 @@
 .method public setTriggeredBy(Lcom/motorola/otalib/main/PublicUtilityMethods$TRIGGER_BY;)V
     .locals 0
 
-    if-nez p1, :cond_0
+    # Modified: Always set triggeredBy to "user" to ensure server returns available updates
+    sget-object p1, Lcom/motorola/otalib/main/PublicUtilityMethods$TRIGGER_BY;->user:Lcom/motorola/otalib/main/PublicUtilityMethods$TRIGGER_BY;
 
-    sget-object p1, Lcom/motorola/otalib/main/PublicUtilityMethods$TRIGGER_BY;->polling:Lcom/motorola/otalib/main/PublicUtilityMethods$TRIGGER_BY;
-
-    :cond_0
     iput-object p1, p0, Lcom/motorola/otalib/main/checkUpdate/CheckRequestObj;->triggeredBy:Lcom/motorola/otalib/main/PublicUtilityMethods$TRIGGER_BY;
 
     return-void

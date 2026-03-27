@@ -711,6 +711,7 @@
 
     invoke-interface {v2, v3, v4}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
 
+    # Modified: Fingerprint sent as-is; buildType and buildTags below are overridden for engineering identity
     const-string v3, "fingerprint"
 
     sget-object v4, Landroid/os/Build;->FINGERPRINT:Ljava/lang/String;
@@ -727,13 +728,15 @@
 
     const-string v3, "buildTags"
 
-    sget-object v4, Landroid/os/Build;->TAGS:Ljava/lang/String;
+    # Modified: Report as dev-keys to identify as engineering/test build
+    const-string v4, "dev-keys"
 
     invoke-interface {v2, v3, v4}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
 
     const-string v3, "buildType"
 
-    sget-object v4, Landroid/os/Build;->TYPE:Ljava/lang/String;
+    # Modified: Report as userdebug to request test/engineering firmware
+    const-string v4, "userdebug"
 
     invoke-interface {v2, v3, v4}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
 
@@ -853,17 +856,15 @@
 
     const-string p0, "bootloaderStatus"
 
-    invoke-static {}, Lcom/motorola/ccc/ota/utils/BuildPropReader;->getBootloaderStatus()Ljava/lang/String;
-
-    move-result-object p2
+    # Modified: Report bootloader as locked to avoid server rejection
+    const-string p2, "locked"
 
     invoke-interface {v2, p0, p2}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
 
     const-string p0, "deviceRooted"
 
-    invoke-static {}, Lcom/motorola/ccc/ota/utils/BuildPropReader;->isDeviceRooted()Ljava/lang/String;
-
-    move-result-object p2
+    # Modified: Report device as not rooted to avoid server rejection
+    const-string p2, "false"
 
     invoke-interface {v2, p0, p2}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
 
