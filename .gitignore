@@ -30,3 +30,6 @@ Thumbs.db
 downloads/
 output/
 chain_*.json
+
+# Old package
+ota_analyzer/
