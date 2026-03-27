@@ -45,7 +45,7 @@ from rich.text import Text
 
 from moto_ota import __version__
 from moto_ota.config.app_config import APP_CONFIG_FIELDS, REGION_SERVERS
-from moto_ota.config.carriers import CARRIERS, open_carriers, carriers_by_region
+from moto_ota.config.carriers import CARRIERS, open_carriers, carriers_by_region, all_scannable_carriers
 from moto_ota.config.device_config import DEVICE_CONFIG_FIELDS
 from moto_ota.config.manager import (
     app_config_path,
@@ -1154,7 +1154,6 @@ def _show_update(resp) -> None:
         body = (
             f"[bold {SUCCESS}]Source  :[/] {resp.source_version}\n"
             f"[bold {SUCCESS}]Target  :[/] {resp.target_version}\n"
-            f"[bold {SUCCESS}]OTA Ver :[/] {resp.target_version}\n"
             f"[bold {SUCCESS}]Size    :[/] {resp.size_mb} MB\n"
             f"[bold {SUCCESS}]Type    :[/] {resp.update_type}\n"
             f"[bold {SUCCESS}]MD5     :[/] {resp.md5}\n"
@@ -1184,20 +1183,15 @@ def _show_chain_table(chain) -> None:
     table.add_column("Install\nOrder", style="bold", width=7, justify="center")
     table.add_column("Source Version", style=ACCENT)
     table.add_column("Target Version", style=SUCCESS)
-    table.add_column("OTA Version", style=f"bold {TEXT}")
     table.add_column("Size", justify="right")
     table.add_column("Type")
     table.add_column("Filename Preview", style=MUTED)
     for i, u in enumerate(chain, 1):
-        # Build a filename preview like the downloader would create
         fname = f"step{i:02d}_{u.target_version}_{u.update_type}.zip"
-        # OTA version = target version
-        ota_ver = u.target_version or "—"
         table.add_row(
             f"#{i}",
             u.source_version or "—",
             u.target_version or "—",
-            ota_ver,
             f"{u.size_mb:.1f} MB",
             u.update_type or "—",
             fname,
@@ -1269,46 +1263,50 @@ def _show_carriers() -> None:
 
 
 def _scan_carriers(guid: str, env: ServerEnv) -> None:
-    """Test a GUID against all open carriers, showing results."""
-    available = open_carriers()
-    results: list[tuple[str, str, str, str, str]] = []  # carrier, status, target, size, fname
+    """Test a GUID against all scannable carriers with auto-detection.
 
-    # Use a simple progress display
+    For each carrier the server is queried.  The result is classified:
+      · **open**        — ``proceed=true`` (update returned directly)
+      · **whitelisted** — ``proceed=false`` but ``x-cds-content-exists=true``
+                          (content exists but needs serial whitelisting)
+      · *skipped*       — ``proceed=false`` and no content (irrelevant carrier)
+    """
+    available = all_scannable_carriers()
     total = len(available)
-    for idx, carrier in enumerate(available):
-        # Show scanning progress
-        progress_body = (
-            f"[bold {ACCENT}]Scanning carrier {idx + 1}/{total}[/]\n\n"
-            f"Carrier: [{SUCCESS}]{carrier.code}[/] ({carrier.name})\n"
-            f"GUID:    [{MUTED}]{guid}[/]\n\n"
-            f"[{MUTED}]Found {len(results)} match(es) so far...[/]"
-        )
-        progress_panel = Panel(
-            progress_body, box=box.ROUNDED, border_style=ACCENT2,
-        )
-        # We can't easily animate this with Live during blocking HTTP calls,
-        # so we just show the final result.
-        try:
-            with OTAClient(env) as client:
-                resp = client.check(guid, carrier.code)
-            if resp.has_update:
-                fname = f"{resp.target_version}_{carrier.code}.zip"
-                results.append((
-                    carrier.code,
-                    carrier.name,
-                    resp.target_version or "—",
-                    f"{resp.size_mb:.1f} MB",
-                    fname,
-                ))
-        except Exception:
-            pass
 
-    # Show results
-    if not results:
+    # (code, name, region, detected_status, target_ver, size, fname)
+    results_open: list[tuple] = []
+    results_wl: list[tuple] = []
+
+    with OTAClient(env) as client:
+        for idx, carrier in enumerate(available):
+            try:
+                resp = client.check(guid, carrier.code)
+                if resp.has_update:
+                    fname = f"{resp.target_version}_{carrier.code}.zip"
+                    results_open.append((
+                        carrier.code, carrier.name, carrier.region,
+                        "open",
+                        resp.target_version or "—",
+                        f"{resp.size_mb:.1f} MB",
+                        fname,
+                    ))
+                elif resp.x_cds_content_exists:
+                    results_wl.append((
+                        carrier.code, carrier.name, carrier.region,
+                        "whitelisted",
+                        "—", "—", "—",
+                    ))
+            except Exception:
+                pass
+
+    found = len(results_open) + len(results_wl)
+
+    if found == 0:
         _fullscreen_display(
             Panel(
                 f"[{WARNING}]No carriers returned updates for GUID {guid}.[/]\n\n"
-                f"[{MUTED}]Tested {total} open carriers.\n"
+                f"[{MUTED}]Tested {total} carriers.\n"
                 f"The OTA package may have expired or the GUID is invalid.[/]",
                 box=box.ROUNDED, border_style=WARNING,
             ),
@@ -1316,22 +1314,40 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
         )
         return
 
+    # --- Build results table ------------------------------------------
     table = Table(
-        title=f"Carrier Scan — {len(results)} match(es) for GUID {guid[:15]}",
+        title=f"Carrier Scan — {found} carrier(s) for GUID {guid[:15]}",
         border_style=ACCENT2, box=box.ROUNDED,
         title_style=f"bold {ACCENT}",
     )
     table.add_column("Carrier", style=f"bold {ACCENT}")
     table.add_column("Name")
+    table.add_column("Region")
+    table.add_column("Status")
     table.add_column("Target Version", style=SUCCESS)
     table.add_column("Size", justify="right")
     table.add_column("Filename Preview", style=MUTED)
-    for code, name, target, size, fname in results:
-        table.add_row(code, name, target, size, fname)
+
+    for row in results_open:
+        code, name, region, status, target, size, fname = row
+        table.add_row(
+            code, name, region,
+            f"[{SUCCESS}]{status}[/]",
+            target, size, fname,
+        )
+    for row in results_wl:
+        code, name, region, status, target, size, fname = row
+        table.add_row(
+            code, name, region,
+            f"[{WARNING}]{status}[/]",
+            target, size, fname,
+        )
 
     summary = Text.assemble(
-        (f"\n  Tested {total} open carriers, ", MUTED),
-        (f"{len(results)} returned updates", f"bold {SUCCESS}"),
+        (f"\n  Scanned {total} carriers: ", MUTED),
+        (f"{len(results_open)} open", f"bold {SUCCESS}"),
+        (", ", MUTED),
+        (f"{len(results_wl)} whitelisted", f"bold {WARNING}"),
     )
     content = Group(table, summary)
     _fullscreen_display(content, title="Carrier Scan Results")
@@ -1449,10 +1465,14 @@ def _run_tui_inner() -> None:
                 guid = _get_guid()
                 if not guid:
                     continue
-            with _fullscreen_spinner(
-                f"Scanning {len(open_carriers())} carriers..."
+            n = len(all_scannable_carriers())
+            if not _fullscreen_confirm(
+                f"Scan {n} carriers against GUID {guid}?\n\n"
+                f"This will send {n} HTTP requests and\n"
+                f"may take several minutes.",
+                default=True,
             ):
-                pass  # spinner shown briefly before scan starts
+                continue
             _scan_carriers(guid, env)
 
         # -- Download updates ------------------------------------------

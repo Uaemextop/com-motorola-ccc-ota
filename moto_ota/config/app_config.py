@@ -38,7 +38,7 @@ class AppConfig:
     """CDS server environment (e.g. ``production-prc``)."""
 
     region: str = "Global"
-    """Region — ``Global`` or ``China``.  Determines available servers."""
+    """Region -- Global or China.  Determines available servers."""
 
     # ── HTTP ─────────────────────────────────────────────────────────
     user_agent: str = "com.motorola.ccc.ota"
