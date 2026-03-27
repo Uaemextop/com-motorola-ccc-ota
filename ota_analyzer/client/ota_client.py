@@ -156,7 +156,7 @@ class OTAClient:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                return CheckResponse.from_dict(data)
+                return CheckResponse.from_dict(data, headers=dict(resp.headers))
             except requests.RequestException as exc:
                 last_error = exc
                 wait = backoff_ms / 1000.0

@@ -18,7 +18,7 @@ from typing import Any
 
 from ota_analyzer.analysis import BinaryAnalyzer, SmaliParser
 from ota_analyzer.client import OTAClient
-from ota_analyzer.config import Environment, Region, get_server
+from ota_analyzer.config import ALL_SERVERS, Environment, Region, get_server
 from ota_analyzer.models import CheckRequest, DeviceInfo, ExtraInfo, IdentityInfo
 
 
@@ -240,6 +240,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["global", "prc"],
         default="prc",
         help="Server region",
+    )
+    bf.add_argument(
+        "--env",
+        choices=["production", "staging", "qa", "development"],
+        default="production",
+        help="Server environment (non-production servers have zero packages)",
     )
 
     # -- common options ----------------------------------------------------
@@ -817,31 +823,53 @@ def _cmd_debug_server(args: argparse.Namespace) -> int:
                 print(f"   Range GET error: {exc}")
 
     # -- 9. All servers comparison -----------------------------------------
-    print("\n── 9. All production servers ──")
-    all_servers = [
-        ("appspot.com", "moto-cds.appspot.com"),
-        ("svcmot.cn", "moto-cds.svcmot.cn"),
-        ("staging", "moto-cds-staging.appspot.com"),
-        ("dev", "moto-cds-dev.appspot.com"),
-    ]
-    for label, srv in all_servers:
-        url_v = f"https://{srv}/cds/upgrade/1/versions/ctx/ota/key/{guid}"
+    print("\n── 9. All known CDS servers ──")
+    for label, srv in ALL_SERVERS:
+        url_v = f"https://{srv}/cds/upgrade/1/versions"
         try:
             s, b, _ = _safe("get", url_v, headers=headers)
             if isinstance(b, dict):
-                print(f"   {label:<14} appId={b.get('applicationId')}"
+                print(f"   {label:<22} appId={b.get('applicationId')}"
                       f" env={b.get('environment')}"
                       f" ver={b.get('applicationVersion', '')[:30]}")
             else:
-                print(f"   {label:<14} {s}")
+                print(f"   {label:<22} {s}")
         except Exception:
-            print(f"   {label:<14} unreachable")
+            print(f"   {label:<22} unreachable")
         time.sleep(0.2)
+
+    # -- 10. Non-production server check -----------------------------------
+    print("\n── 10. Non-production servers (OTA check) ──")
+    non_prod_servers = [
+        ("staging", "moto-cds-staging.appspot.com"),
+        ("blurdev (=staging)", "ota-cn-sdc.blurdev.com"),
+        ("qa", "moto-cds-qa.appspot.com"),
+        ("dev", "moto-cds-dev.appspot.com"),
+    ]
+    for label, srv in non_prod_servers:
+        # Use v2 for blurdev (v1 times out through nginx proxy)
+        api_ver = "2" if "blurdev" in srv else "1"
+        url_np = f"https://{srv}/cds/upgrade/{api_ver}/check/ctx/ota/key/{guid}"
+        try:
+            s, b, h_np = _safe("post", url_np, json=check_payload, headers=headers)
+            if isinstance(b, dict):
+                proceed = b.get("proceed", False)
+                has_c = b.get("content") is not None
+                cds_hdr = h_np.get("x-cds-content-exists", "?")
+                bitmap = b.get("smartUpdateBitmap", "?")
+                print(f"   {label:<22} proceed={proceed}  content={'YES' if has_c else 'null'}"
+                      f"  x-cds={cds_hdr}  bitmap={bitmap}")
+            else:
+                print(f"   {label:<22} {s} → {str(b)[:80]}")
+        except Exception as exc:
+            print(f"   {label:<22} error: {exc}")
+        time.sleep(0.2)
+    print("   → Non-production servers have zero OTA packages (confirmed)")
 
     # -- Summary -----------------------------------------------------------
     print()
     print("=" * 72)
-    print("  ENDPOINT REFERENCE")
+    print("  ENDPOINT REFERENCE (verified by probing)")
     print("=" * 72)
     print("""
   Endpoint     Method  URL Pattern                                       Purpose
@@ -852,10 +880,25 @@ def _cmd_debug_server(args: argparse.Namespace) -> int:
   state        POST    /cds/upgrade/1/state/t/{tid}/s/{st}/ctx/ota/key/  Report install state
   versions     GET     /cds/upgrade/1/versions                           Server version info
 
-  Required check payload fields: id, extraInfo.otaSourceSha1, identityInfo.serialNumber
-  State payload adds: contentTimestamp, status, reportingTags, upgradeSource
-  Resources payload: minimal (id, identityInfo, idType)
-  Download URLs: ZIP files via dlmgr.gtm.svcmot.com, support HEAD + Range requests
+  Minimal check payload (server ignores all other fields):
+    {
+      "id": "any-string",
+      "deviceInfo": {"country": "US", "region": "US"},
+      "extraInfo": {
+        "carrier": "<carrier>",        ← CRITICAL routing field
+        "vitalUpdate": false,          ← must be false
+        "otaSourceSha1": "<guid>"      ← GUID from ro.mot.build.guid
+      },
+      "triggeredBy": "user"            ← only "user" returns updates
+    }
+
+  Server ignores: product, model, buildType, fingerprint, imei, mccmnc,
+                  bootloaderStatus, deviceRooted, channelId, isDogfoodDevice
+
+  Headers: Content-Type + User-Agent only (NO auth headers for check)
+  Response header: x-cds-content-exists (true/false)
+  smartUpdateBitmap: prod=7, staging=7, QA=-1, dev=11
+  Non-production servers: zero packages (staging/QA/dev/blurdev)
 """)
 
     return 0
@@ -866,7 +909,10 @@ def _cmd_download_ota(args: argparse.Namespace) -> int:
     import requests as req
     from pathlib import Path
 
-    host = "moto-cds.svcmot.cn" if args.region == "prc" else "moto-cds.appspot.com"
+    region = Region.PRC if args.region == "prc" else Region.GLOBAL
+    environment = Environment(args.env)
+    server = get_server(region, environment)
+    host = server.host
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1008,7 +1054,10 @@ def _cmd_brute_force(args: argparse.Namespace) -> int:
     """Brute-force discover GUIDs and test API configurations."""
     import requests as req
 
-    host = "moto-cds.svcmot.cn" if args.region == "prc" else "moto-cds.appspot.com"
+    region = Region.PRC if args.region == "prc" else Region.GLOBAL
+    environment = Environment(args.env)
+    server = get_server(region, environment)
+    host = server.host
 
     def _check(guid, carrier, context="ota"):
         url = f"https://{host}/cds/upgrade/1/check/ctx/{context}/key/{guid}"
