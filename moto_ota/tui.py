@@ -1,12 +1,17 @@
-"""Penumbra-style Rich TUI for the Motorola OTA Downloader.
+"""Penumbra-style full-screen TUI for the Motorola OTA Downloader.
 
-Keyboard-driven interface with split-pane layouts, ASCII art banner,
-and purple/blue colour accents.  Uses **only** the ``rich`` library
-(no textual, no curses) with ``rich.live.Live`` for real-time display
-and raw ``termios`` input for arrow-key navigation.
+Inspired by https://github.com/shomykohai/penumbra — a Rust/ratatui
+TUI with:
+  · Full-screen alternate buffer
+  · Centred ASCII logo on the welcome page
+  · Description-menu component (list left + description right)
+  · Status cards showing current config
+  · Footer with keyboard-hint bar
+  · Rounded borders, accent / muted colour scheme
 
-Launched when ``moto-ota`` is invoked without a subcommand, or
-explicitly via ``moto-ota interactive``.
+Uses **only** the ``rich`` library with ``Live(screen=True)`` for
+full-screen rendering and raw ``termios`` input for arrow-key
+navigation.
 """
 
 from __future__ import annotations
@@ -18,10 +23,13 @@ import tty
 from pathlib import Path
 from typing import Any
 
+from rich import box
 from rich.align import Align
-from rich.console import Console, Group
+from rich.columns import Columns
+from rich.console import Console, Group, RenderableType
 from rich.layout import Layout
 from rich.live import Live
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
@@ -43,32 +51,38 @@ from moto_ota.config.servers import SERVERS, ServerEnv
 from moto_ota.core.client import OTAClient
 from moto_ota.core.downloader import download_chain
 
-# ── colour palette ───────────────────────────────────────────────────
-_PURPLE = "#af5fff"
-_BLUE = "#5f87ff"
-_DIM = "dim"
-_BOLD = "bold"
+# ═══════════════════════════════════════════════════════════════════════
+#  Colour theme  (mirrors penumbra "system" defaults — cyan accent)
+# ═══════════════════════════════════════════════════════════════════════
+ACCENT = "cyan"           # primary accent (borders, selected items)
+TEXT = "white"             # normal body text
+MUTED = "bright_black"    # secondary / disabled text
+INFO = "bright_cyan"      # description text (bold italic)
+SUCCESS = "green"          # positive status
+WARNING = "yellow"         # warning / caution
+ERROR = "red"              # errors
 
 console = Console()
 
-# ── ASCII art logo ───────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  ASCII logo  (styled after penumbra's figlet banner)
+# ═══════════════════════════════════════════════════════════════════════
 _LOGO = r"""
- ███╗   ███╗ ██████╗ ████████╗ ██████╗        ██████╗ ████████╗ █████╗
- ████╗ ████║██╔═══██╗╚══██╔══╝██╔═══██╗      ██╔═══██╗╚══██╔══╝██╔══██╗
- ██╔████╔██║██║   ██║   ██║   ██║   ██║█████╗██║   ██║   ██║   ███████║
- ██║╚██╔╝██║██║   ██║   ██║   ██║   ██║╚════╝██║   ██║   ██║   ██╔══██║
- ██║ ╚═╝ ██║╚██████╔╝   ██║   ╚██████╔╝      ╚██████╔╝   ██║   ██║  ██║
- ╚═╝     ╚═╝ ╚═════╝    ╚═╝    ╚═════╝        ╚═════╝    ╚═╝   ╚═╝  ╚═╝
+ __  __       _              ___  _____  _
+|  \/  | ___ | |_ ___       / _ \|_   _|/ \
+| |\/| |/ _ \| __/ _ \ ____| | | | | | / _ \
+| |  | | (_) | || (_) |____| |_| | | |/ ___ \
+|_|  |_|\___/ \__\___/      \___/  |_/_/   \_\
 """
 
-# ── keyboard input ───────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  Keyboard input  (raw termios)
+# ═══════════════════════════════════════════════════════════════════════
 
 
 def _read_key() -> str:
-    """Read a single keypress from stdin in raw mode.
-
-    Returns one of: ``'up'``, ``'down'``, ``'left'``, ``'right'``,
-    ``'enter'``, ``'escape'``, ``'quit'``, or the literal character.
+    """Read a single keypress.  Returns ``'up'``, ``'down'``,
+    ``'enter'``, ``'escape'``, ``'quit'``, or the literal char.
     """
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
@@ -76,20 +90,14 @@ def _read_key() -> str:
         tty.setraw(fd)
         ch = sys.stdin.read(1)
         if ch == "\x1b":
-            # Wait briefly for follow-up bytes of an escape sequence
             if select.select([sys.stdin], [], [], 0.05)[0]:
                 ch2 = sys.stdin.read(1)
                 if ch2 == "[" and select.select([sys.stdin], [], [], 0.05)[0]:
                     ch3 = sys.stdin.read(1)
-                    if ch3 == "A":
-                        return "up"
-                    if ch3 == "B":
-                        return "down"
-                    if ch3 == "C":
-                        return "right"
-                    if ch3 == "D":
-                        return "left"
-                    # Drain any remaining bytes of unrecognised sequence
+                    _map = {"A": "up", "B": "down", "C": "right", "D": "left"}
+                    if ch3 in _map:
+                        return _map[ch3]
+                    # drain unrecognised sequence
                     while select.select([sys.stdin], [], [], 0.02)[0]:
                         sys.stdin.read(1)
             return "escape"
@@ -102,115 +110,217 @@ def _read_key() -> str:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
-# ── renderable builders ─────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  Reusable UI components  (penumbra-style)
+# ═══════════════════════════════════════════════════════════════════════
 
 
-def _menu_renderable(
+def _card(label: str, value: str, width: int = 34) -> Panel:
+    """Small rounded card — like penumbra's DA / PL status cards."""
+    if value:
+        body = Text.assemble(
+            (f"{label}  ", f"bold {ACCENT}"),
+            (value, TEXT),
+        )
+    else:
+        body = Text.assemble(
+            (f"{label}  ", f"bold {ACCENT}"),
+            ("Not configured", MUTED),
+        )
+    return Panel(
+        body,
+        box=box.ROUNDED,
+        border_style=ACCENT,
+        width=width,
+        padding=(0, 1),
+    )
+
+
+def _footer_bar() -> Text:
+    """Centred keyboard-hints bar — penumbra-style footer."""
+    return Text.assemble(
+        (" [↑↓] ", f"bold {TEXT}"),
+        ("Navigate", MUTED),
+        ("    ", ""),
+        (" [Enter] ", f"bold {TEXT}"),
+        ("Select", MUTED),
+        ("    ", ""),
+        (" [Esc] ", f"bold {TEXT}"),
+        ("Back", MUTED),
+    )
+
+
+def _menu_list(
     items: list[str],
     selected: int,
     *,
-    title: str = "",
-) -> Panel:
-    """Build a ``Panel`` showing *items* with a highlighted *selected* row."""
-    lines = Text()
+    icons: list[str] | None = None,
+) -> Text:
+    """Selectable list — selected item bold + accent, others text."""
+    out = Text()
     for i, label in enumerate(items):
+        ico = (icons[i] + "  ") if icons and i < len(icons) else ""
         if i == selected:
-            lines.append("  ▶ ", style=f"bold {_PURPLE}")
-            lines.append(f"{label}\n", style=f"bold {_PURPLE}")
+            out.append(f"  >> {ico}{label}\n", style=f"bold {ACCENT}")
         else:
-            lines.append(f"    {label}\n", style=_DIM)
+            out.append(f"     {ico}{label}\n", style=TEXT)
+    return out
+
+
+def _description_box(text: str) -> Panel:
+    """Right-side description panel — rounded border, italic text."""
+    body = Text(text, style=f"bold italic {INFO}")
     return Panel(
-        lines,
-        title=f"[bold {_BLUE}]{title}[/]" if title else None,
-        border_style=_BLUE,
-        padding=(1, 2),
+        Padding(body, (1, 2)),
+        box=box.ROUNDED,
+        border_style=TEXT,
+        title=None,
     )
 
 
-def _description_panel(text: str, *, title: str = "Details") -> Panel:
-    """Build a right-side description panel."""
-    return Panel(
-        Text(text),
-        title=f"[bold {_BLUE}]{title}[/]",
-        border_style=_BLUE,
-        padding=(1, 2),
+# ═══════════════════════════════════════════════════════════════════════
+#  Welcome page  (full-screen, penumbra-style)
+# ═══════════════════════════════════════════════════════════════════════
+
+_MAIN_ITEMS = [
+    "Check for update",
+    "Walk update chain",
+    "Download updates",
+    "List servers",
+    "List carriers",
+    "Configuration",
+    "Exit",
+]
+_MAIN_ICONS = ["☾", "☾", "◈", "◈", "◈", "\u2699", "⏻"]
+_MAIN_DESCS = [
+    "Perform a single OTA check for a\nGUID + carrier combination.\n\nThe server will respond with the\nnext available update (if any).",
+    "Enumerate all incremental updates\nfrom a base GUID to the latest\navailable build, following the\notaTargetSha1 chain.",
+    "Walk the full update chain and\ndownload every OTA zip to a local\ndirectory, with MD5 verification.",
+    "Show all known CDS server\nendpoints and their current\nstatus.",
+    "Display the full list of known\ncarrier codes, their names,\nregions, and open/whitelisted\nstatus.",
+    "Edit application and device\nconfiguration files.\n\nSettings include server, region,\nHTTP headers, timeouts, GUID,\ncarrier, and device metadata.",
+    "Quit the application.",
+]
+
+
+def _welcome_screen(selected: int) -> RenderableType:
+    """Build the full welcome page renderable."""
+    # ── Logo ─────────────────────────────────────────────────────────
+    logo = Text(_LOGO.strip("\n"), style=f"bold {ACCENT}")
+
+    # ── Subtitle ─────────────────────────────────────────────────────
+    subtitle = Text.assemble(
+        ("Motorola OTA Downloader", f"bold {ACCENT}"),
+        ("  v", MUTED),
+        (__version__, f"bold {ACCENT}"),
     )
 
+    # ── Menu (left) + Description (right) ────────────────────────────
+    menu_text = _menu_list(_MAIN_ITEMS, selected, icons=_MAIN_ICONS)
+    menu_panel = Panel(
+        Padding(menu_text, (1, 1)),
+        box=box.ROUNDED,
+        border_style=TEXT,
+        width=min(40, (console.width or 100) // 2 - 2),
+    )
 
-def _split_layout(
-    left: Panel,
-    right: Panel,
-) -> Layout:
-    """Two-column layout (menu | description)."""
+    desc_panel = _description_box(_MAIN_DESCS[selected])
+
+    menu_row = Columns(
+        [menu_panel, desc_panel],
+        align="center",
+        padding=(0, 2),
+    )
+
+    # ── Status cards ─────────────────────────────────────────────────
+    cfg_dev = load_device_config()
+    card_guid = _card("☽ GUID", cfg_dev.guid)
+    card_carrier = _card("⚡ Carrier", cfg_dev.carrier)
+    cards = Columns([card_guid, card_carrier], align="center", padding=(0, 2))
+
+    # ── Footer ───────────────────────────────────────────────────────
+    footer = Align.center(_footer_bar())
+
+    # ── Compose full screen ──────────────────────────────────────────
     layout = Layout()
-    layout.split_row(
-        Layout(left, name="menu", ratio=2),
-        Layout(right, name="detail", ratio=3),
+    layout.split_column(
+        Layout(name="logo", size=7),
+        Layout(name="subtitle", size=2),
+        Layout(name="menu", ratio=1),
+        Layout(name="cards", size=3),
+        Layout(name="footer", size=2),
     )
+    layout["logo"].update(Align.center(logo, vertical="bottom"))
+    layout["subtitle"].update(Align.center(subtitle, vertical="middle"))
+    layout["menu"].update(Align.center(menu_row, vertical="middle"))
+    layout["cards"].update(Align.center(cards, vertical="middle"))
+    layout["footer"].update(footer)
+
     return layout
 
 
-# ── generic selectable menu ──────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  Generic full-screen selectable menu
+# ═══════════════════════════════════════════════════════════════════════
 
 
-def _selectable_menu(
+def _fullscreen_menu(
     items: list[str],
+    descriptions: list[str] | None = None,
     *,
-    title: str = "Menu",
+    title: str = "",
+    icons: list[str] | None = None,
     allow_escape: bool = True,
 ) -> int | None:
-    """Show a keyboard-navigated selectable list.
-
-    Returns the chosen index, or ``None`` if the user pressed Escape.
-    """
-    selected = 0
-    with Live(
-        _menu_renderable(items, selected, title=title),
-        console=console,
-        refresh_per_second=30,
-        screen=False,
-    ) as live:
-        while True:
-            key = _read_key()
-            if key == "up":
-                selected = (selected - 1) % len(items)
-            elif key == "down":
-                selected = (selected + 1) % len(items)
-            elif key == "enter":
-                return selected
-            elif key in ("escape", "quit") and allow_escape:
-                return None
-            live.update(
-                _menu_renderable(items, selected, title=title),
-            )
-
-
-def _description_menu(
-    items: list[str],
-    descriptions: list[str],
-    *,
-    title: str = "Menu",
-    detail_title: str = "Details",
-    allow_escape: bool = True,
-) -> int | None:
-    """Split-pane menu: list on the left, description on the right.
-
-    Returns the chosen index, or ``None`` on Escape.
+    """Full-screen menu with optional description pane.
+    Returns chosen index or ``None`` on escape.
     """
     selected = 0
 
-    def _render() -> Layout:
-        left = _menu_renderable(items, selected, title=title)
-        right = _description_panel(
-            descriptions[selected], title=detail_title,
+    def _render() -> RenderableType:
+        menu_text = _menu_list(items, selected, icons=icons)
+        menu_panel = Panel(
+            Padding(menu_text, (1, 1)),
+            box=box.ROUNDED,
+            border_style=ACCENT if title else TEXT,
+            title=f"[bold {ACCENT}] {title} [/]" if title else None,
+            width=min(44, (console.width or 100) // 2 - 2),
         )
-        return _split_layout(left, right)
+
+        if descriptions:
+            desc_panel = _description_box(descriptions[selected])
+            content: RenderableType = Columns(
+                [menu_panel, desc_panel],
+                align="center",
+                padding=(0, 2),
+            )
+        else:
+            content = Align.center(menu_panel)
+
+        footer = Align.center(_footer_bar())
+
+        lay = Layout()
+        lay.split_column(
+            Layout(name="top", size=2),
+            Layout(name="content", ratio=1),
+            Layout(name="footer", size=2),
+        )
+        if title:
+            heading = Align.center(
+                Text(f"  {title}  ", style=f"bold {ACCENT}"),
+            )
+            lay["top"].update(heading)
+        else:
+            lay["top"].update(Text(""))
+        lay["content"].update(Align.center(content, vertical="middle"))
+        lay["footer"].update(footer)
+        return lay
 
     with Live(
         _render(),
         console=console,
-        refresh_per_second=30,
-        screen=False,
+        screen=True,
+        refresh_per_second=20,
     ) as live:
         while True:
             key = _read_key()
@@ -225,39 +335,14 @@ def _description_menu(
             live.update(_render())
 
 
-# ── welcome banner ───────────────────────────────────────────────────
-
-
-def _welcome_banner() -> Panel:
-    """Render the splash banner with logo and version string."""
-    logo = Text(_LOGO, style=f"bold {_PURPLE}")
-    subtitle = Text.assemble(
-        ("Motorola OTA Downloader", f"bold {_BLUE}"),
-        ("  v", _DIM),
-        (__version__, f"bold {_PURPLE}"),
-    )
-    hint = Text(
-        "↑/↓ Navigate  ·  Enter Select  ·  Esc Back  ·  q Quit",
-        style=_DIM,
-    )
-    body = Group(
-        Align.center(logo),
-        Align.center(subtitle),
-        Text(""),
-        Align.center(hint),
-    )
-    return Panel(body, border_style=_BLUE, padding=(0, 2))
-
-
-# ── config editing helpers ───────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  Config editing helpers
+# ═══════════════════════════════════════════════════════════════════════
 
 
 def _edit_field(field_meta: dict, current_value: Any) -> Any:
-    """Show the appropriate editor for a config field.
-
-    For ``choice`` and ``carrier`` types a selectable TUI menu is used;
-    for ``bool`` a True/False picker is shown; ``int`` and ``text``
-    fall back to ``rich.prompt``.
+    """Edit a single config field.  Choice / carrier / bool use the
+    full-screen selectable menu; int / text fall back to rich.prompt.
     """
     ftype = field_meta["type"]
     label = field_meta["label"]
@@ -266,11 +351,11 @@ def _edit_field(field_meta: dict, current_value: Any) -> Any:
     if ftype == "choice":
         choices: list[str] = field_meta["choices"]
         labels = [
-            f"{c}  ← current" if c == str(current_value) else c
+            f"{c}  \u2190 current" if c == str(current_value) else c
             for c in choices
         ]
         labels.append("Keep current")
-        pick = _selectable_menu(labels, title=f"Select {label}")
+        pick = _fullscreen_menu(labels, title=f"Select {label}")
         if pick is None or pick >= len(choices):
             return current_value
         return choices[pick]
@@ -280,12 +365,12 @@ def _edit_field(field_meta: dict, current_value: Any) -> Any:
         available = open_carriers()
         labels = [
             f"{c.code:<10} {c.name}  ({c.region})"
-            + ("  ← current" if c.code == current_value else "")
+            + ("  \u2190 current" if c.code == current_value else "")
             for c in available
         ]
         labels.append("Enter custom code")
         labels.append("Keep current")
-        pick = _selectable_menu(labels, title="Select Carrier")
+        pick = _fullscreen_menu(labels, title="Select Carrier")
         if pick is None or pick == len(available) + 1:
             return current_value
         if pick == len(available):
@@ -296,10 +381,10 @@ def _edit_field(field_meta: dict, current_value: Any) -> Any:
     if ftype == "bool":
         cur = bool(current_value)
         labels = [
-            f"True{'  ← current' if cur else ''}",
-            f"False{'  ← current' if not cur else ''}",
+            f"True{'  \u2190 current' if cur else ''}",
+            f"False{'  \u2190 current' if not cur else ''}",
         ]
-        pick = _selectable_menu(labels, title=f"Toggle {label}")
+        pick = _fullscreen_menu(labels, title=f"Toggle {label}")
         if pick is None:
             return current_value
         return pick == 0
@@ -309,13 +394,13 @@ def _edit_field(field_meta: dict, current_value: Any) -> Any:
         lo = field_meta.get("min", 0)
         hi = field_meta.get("max", 999999)
         val = Prompt.ask(
-            f"[bold]{label}[/] ({lo}–{hi})",
+            f"[bold]{label}[/] ({lo}\u2013{hi})",
             default=str(current_value),
         )
         try:
             return max(lo, min(hi, int(val)))
         except ValueError:
-            console.print("[red]Invalid number – keeping current value.[/]")
+            console.print("[red]Invalid number \u2014 keeping current value.[/]")
             return current_value
 
     # -- text ----------------------------------------------------------
@@ -347,32 +432,27 @@ def _edit_config_page(
     cfg: object,
     save_fn,
 ) -> None:
-    """Interactive split-pane config editor."""
+    """Interactive full-screen config editor."""
     while True:
         labels, descs = _config_fields_labels(fields, cfg)
         labels += ["Save and go back", "Discard and go back"]
         descs += [
             "Persist all changes to disk.",
-            "Discard all changes made in this session.",
+            "Discard all changes made in\nthis session.",
         ]
-        pick = _description_menu(
-            labels,
-            descs,
-            title=title,
-            detail_title="Setting Info",
-        )
+        pick = _fullscreen_menu(labels, descs, title=title)
         if pick is None or pick == len(fields) + 1:
             return
         if pick == len(fields):
             path = save_fn(cfg)
-            console.print(f"\n[green]Saved to {path}[/]")
+            console.print(f"\n[{SUCCESS}]Saved to {path}[/]")
             return
         field_meta = fields[pick]
         current = getattr(cfg, field_meta["key"])
         new_val = _edit_field(field_meta, current)
         setattr(cfg, field_meta["key"], new_val)
         console.print(
-            f"  → [green]{field_meta['label']}[/] = [bold]{new_val}[/]",
+            f"  \u2192 [{SUCCESS}]{field_meta['label']}[/] = [bold]{new_val}[/]",
         )
 
 
@@ -385,14 +465,15 @@ def _config_menu() -> None:
         "Back to main menu",
     ]
     descs = [
-        f"Server, HTTP headers, timeouts, region.\n\nFile: {app_config_path()}",
+        f"Server, HTTP headers, timeouts,\nregion.\n\nFile: {app_config_path()}",
         f"GUID, carrier, device parameters.\n\nFile: {device_config_path()}",
-        "Display both configs side-by-side in a table.",
+        "Display both configs side-by-side\nin a table.",
         "Return to the main menu.",
     ]
+    icons = ["\u2699", "\u2699", "\u25c8", "\u21a9"]
     while True:
-        pick = _description_menu(
-            items, descs, title="Configuration", detail_title="Info",
+        pick = _fullscreen_menu(
+            items, descs, title="Configuration", icons=icons,
         )
         if pick is None or pick == 3:
             return
@@ -423,7 +504,7 @@ def _show_both_configs() -> None:
     _show_config_table("App Configuration", APP_CONFIG_FIELDS, cfg_app)
     console.print()
     _show_config_table("Device Configuration", DEVICE_CONFIG_FIELDS, cfg_dev)
-    console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+    console.print(f"\n[{MUTED}]Press any key to continue\u2026[/]")
     _read_key()
 
 
@@ -433,53 +514,50 @@ def _show_config_table(
     config_obj: object,
 ) -> None:
     """Display a table of current config values."""
-    table = Table(title=title, show_lines=True, border_style=_BLUE)
-    table.add_column("Setting", style=f"bold {_PURPLE}", min_width=18)
-    table.add_column("Value", style="green", min_width=20)
-    table.add_column("Description", style=_DIM)
+    table = Table(
+        title=title, show_lines=True,
+        box=box.ROUNDED, border_style=ACCENT,
+    )
+    table.add_column("Setting", style=f"bold {ACCENT}", min_width=18)
+    table.add_column("Value", style=SUCCESS, min_width=20)
+    table.add_column("Description", style=MUTED)
     for f in fields:
         val = getattr(config_obj, f["key"], "")
         table.add_row(
             f["label"],
-            str(val) if val != "" else "[dim](empty)[/]",
+            str(val) if val != "" else f"[{MUTED}](empty)[/]",
             Text(f["description"]),
         )
     console.print(table)
 
 
-# ── operation helpers ────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  Operation helpers
+# ═══════════════════════════════════════════════════════════════════════
 
 
 def _pick_server() -> ServerEnv | None:
-    """Interactive server selector using selectable menu."""
+    """Full-screen server selector."""
     items_list = list(SERVERS.items())
-    labels = [
-        f"{srv.label}  ({srv.host})" for _, srv in items_list
-    ]
+    labels = [f"{srv.label}  ({srv.host})" for _, srv in items_list]
     descs = [srv.description for _, srv in items_list]
-    pick = _description_menu(
-        labels, descs, title="Select CDS Server", detail_title="Server Info",
-    )
+    pick = _fullscreen_menu(labels, descs, title="Select CDS Server")
     if pick is None:
         return None
     return items_list[pick][0]
 
 
 def _pick_carrier() -> str | None:
-    """Interactive carrier selector using selectable menu."""
+    """Full-screen carrier selector."""
     available = open_carriers()
-    labels = [
-        f"{c.code:<10} {c.name}  ({c.region})" for c in available
-    ]
-    labels.append("Custom…")
+    labels = [f"{c.code:<10} {c.name}  ({c.region})" for c in available]
+    labels.append("Custom\u2026")
     descs = [
         f"Code: {c.code}\nName: {c.name}\nRegion: {c.region}\nStatus: {c.status}"
         for c in available
     ]
-    descs.append("Enter a custom carrier code manually.")
-    pick = _description_menu(
-        labels, descs, title="Select Carrier", detail_title="Carrier Info",
-    )
+    descs.append("Enter a custom carrier code\nmanually.")
+    pick = _fullscreen_menu(labels, descs, title="Select Carrier")
     if pick is None:
         return None
     if pick == len(available):
@@ -492,19 +570,16 @@ def _get_guid() -> str:
 
 
 def _get_guid_and_carrier() -> tuple[str, str, ServerEnv] | None:
-    """Ask for server, GUID, and carrier – or use saved device config.
-
-    Returns ``None`` if the user cancels at any step.
-    """
+    """Ask for server, GUID, and carrier — or use saved config."""
     cfg_dev = load_device_config()
     cfg_app = load_app_config()
 
     has_saved = bool(cfg_dev.guid and cfg_dev.carrier)
     if has_saved:
         console.print(
-            f"\n[{_DIM}]Saved config: guid=[cyan]{cfg_dev.guid}[/] "
-            f"carrier=[green]{cfg_dev.carrier}[/] "
-            f"server=[{_BLUE}]{cfg_app.server}[/][/]",
+            f"\n[{MUTED}]Saved config: guid=[{ACCENT}]{cfg_dev.guid}[/] "
+            f"carrier=[{SUCCESS}]{cfg_dev.carrier}[/] "
+            f"server=[{INFO}]{cfg_app.server}[/][/]",
         )
         if Confirm.ask("Use saved configuration?", default=True):
             return cfg_dev.guid, cfg_dev.carrier, cfg_app.server_env
@@ -521,128 +596,100 @@ def _get_guid_and_carrier() -> tuple[str, str, ServerEnv] | None:
     return guid, carrier, env
 
 
-# ── result display ───────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════
+#  Result display
+# ═══════════════════════════════════════════════════════════════════════
 
 
 def _show_update(resp) -> None:
     if resp.has_update:
         body = (
-            f"[bold green]Source :[/] {resp.source_version}\n"
-            f"[bold green]Target :[/] {resp.target_version}\n"
-            f"[bold green]Size   :[/] {resp.size_mb} MB\n"
-            f"[bold green]Type   :[/] {resp.update_type}\n"
-            f"[bold green]MD5    :[/] {resp.md5}\n"
-            f"[bold green]GUID   :[/] {resp.target_guid}"
+            f"[bold {SUCCESS}]Source :[/] {resp.source_version}\n"
+            f"[bold {SUCCESS}]Target :[/] {resp.target_version}\n"
+            f"[bold {SUCCESS}]Size   :[/] {resp.size_mb} MB\n"
+            f"[bold {SUCCESS}]Type   :[/] {resp.update_type}\n"
+            f"[bold {SUCCESS}]MD5    :[/] {resp.md5}\n"
+            f"[bold {SUCCESS}]GUID   :[/] {resp.target_guid}"
         )
-        panel = Panel(body, title="Update Available", border_style="green")
+        panel = Panel(body, title="Update Available",
+                      border_style=SUCCESS, box=box.ROUNDED)
     else:
         cds = resp.x_cds_content_exists
         body = (
             f"proceed = [bold]false[/]\n"
-            f"x-cds-content-exists = [yellow]{cds}[/]\n"
+            f"x-cds-content-exists = [{WARNING}]{cds}[/]\n"
             f"poll after {resp.poll_after_seconds}s"
         )
-        panel = Panel(body, title="No Update", border_style="yellow")
+        panel = Panel(body, title="No Update",
+                      border_style=WARNING, box=box.ROUNDED)
     console.print(panel)
-    console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+    console.print(f"\n[{MUTED}]Press any key to continue\u2026[/]")
     _read_key()
 
 
 def _show_chain_table(chain) -> None:
     table = Table(
-        title=f"OTA Update Chain — {len(chain)} step(s)",
-        border_style=_BLUE,
+        title=f"OTA Update Chain \u2014 {len(chain)} step(s)",
+        border_style=ACCENT, box=box.ROUNDED,
     )
-    table.add_column("#", style=_BOLD, width=4)
-    table.add_column("Source", style="cyan")
-    table.add_column("Target", style="green")
+    table.add_column("#", style="bold", width=4)
+    table.add_column("Source", style=ACCENT)
+    table.add_column("Target", style=SUCCESS)
     table.add_column("Size", justify="right")
     table.add_column("Type")
-    table.add_column("Target GUID", style=_DIM)
+    table.add_column("Target GUID", style=MUTED)
     for i, u in enumerate(chain, 1):
         table.add_row(
-            str(i),
-            u.source_version,
-            u.target_version,
-            f"{u.size_mb} MB",
-            u.update_type,
-            u.target_guid[:15],
+            str(i), u.source_version, u.target_version,
+            f"{u.size_mb} MB", u.update_type, u.target_guid[:15],
         )
     console.print(table)
     total = sum(u.size_mb for u in chain)
     console.print(
-        f"\n  [{_BOLD}]Base :[/] {chain[0].source_version}  →  "
-        f"[{_BOLD}]Latest:[/] {chain[-1].target_version}  "
+        f"\n  [bold]Base :[/] {chain[0].source_version}  \u2192  "
+        f"[bold]Latest:[/] {chain[-1].target_version}  "
         f"({total:.1f} MB total)",
     )
-    console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+    console.print(f"\n[{MUTED}]Press any key to continue\u2026[/]")
     _read_key()
 
 
-# ── server / carrier list views ──────────────────────────────────────
-
-
 def _show_servers() -> None:
-    table = Table(title="CDS Servers", border_style=_BLUE)
-    table.add_column("Name", style=_BOLD)
+    table = Table(title="CDS Servers", border_style=ACCENT, box=box.ROUNDED)
+    table.add_column("Name", style="bold")
     table.add_column("Host")
     table.add_column("Description")
     for env, srv in SERVERS.items():
-        style = "green" if "production" in env.value else _DIM
+        style = SUCCESS if "production" in env.value else MUTED
         table.add_row(f"[{style}]{env.value}[/]", srv.host, srv.description)
     console.print(table)
-    console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+    console.print(f"\n[{MUTED}]Press any key to continue\u2026[/]")
     _read_key()
 
 
 def _show_carriers() -> None:
-    table = Table(title="Known Carriers", border_style=_BLUE)
-    table.add_column("Code", style=f"bold {_PURPLE}")
+    table = Table(title="Known Carriers", border_style=ACCENT, box=box.ROUNDED)
+    table.add_column("Code", style=f"bold {ACCENT}")
     table.add_column("Name")
     table.add_column("Region")
     table.add_column("Status")
     for c in CARRIERS:
-        st = "green" if c.status == "open" else "yellow"
+        st = SUCCESS if c.status == "open" else WARNING
         table.add_row(c.code, c.name, c.region, f"[{st}]{c.status}[/]")
     console.print(table)
-    console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+    console.print(f"\n[{MUTED}]Press any key to continue\u2026[/]")
     _read_key()
 
 
-# ── main TUI loop ────────────────────────────────────────────────────
-
-_MAIN_ITEMS = [
-    "Check for update",
-    "Walk update chain",
-    "Download updates",
-    "List servers",
-    "List carriers",
-    "Configuration",
-    "Exit",
-]
-
-_MAIN_DESCS = [
-    "Perform a single OTA check for a GUID + carrier combination.\n\n"
-    "The server will respond with the next available update (if any).",
-    "Enumerate all incremental updates from a base GUID to the\n"
-    "latest available build, following the otaTargetSha1 chain.",
-    "Walk the full update chain and download every OTA zip\n"
-    "to a local directory, with MD5 verification.",
-    "Show all known CDS (Content Delivery Service) server\n"
-    "endpoints and their current status.",
-    "Display the full list of known carrier codes, their names,\n"
-    "regions, and whether they are open or whitelisted.",
-    "Edit application and device configuration files.\n\n"
-    "Settings include server, region, HTTP headers, timeouts,\n"
-    "GUID, carrier, and device metadata.",
-    "Quit the application.",
-]
+# ═══════════════════════════════════════════════════════════════════════
+#  Main TUI loop
+# ═══════════════════════════════════════════════════════════════════════
 
 
 def run_tui() -> None:
     """Entry point for the interactive terminal UI."""
     if not sys.stdin.isatty():
-        console.print("[red]Interactive TUI requires a terminal (TTY).[/]")
+        console.print(f"[{ERROR}]Interactive TUI requires a terminal (TTY).[/]")
         console.print("Use CLI mode instead: [bold]moto-ota --help[/]")
         return
 
@@ -653,26 +700,39 @@ def run_tui() -> None:
     except (KeyboardInterrupt, EOFError):
         pass
     finally:
-        # Always restore the terminal to a sane state.
         try:
             termios.tcsetattr(fd, termios.TCSADRAIN, original_attr)
         except termios.error:
             pass
-        console.print(f"\n[bold {_PURPLE}]Goodbye![/]")
+        console.print(f"\n[bold {ACCENT}]Goodbye![/]")
 
 
 def _run_tui_inner() -> None:
-    """Core TUI loop (wrapped by ``run_tui`` for terminal safety)."""
-    console.print(_welcome_banner())
+    """Core TUI loop — full-screen welcome page like penumbra."""
+    selected = 0
 
     while True:
-        pick = _description_menu(
-            _MAIN_ITEMS,
-            _MAIN_DESCS,
-            title="Main Menu",
-            detail_title="Description",
-            allow_escape=False,
-        )
+        # Show full-screen welcome page
+        with Live(
+            _welcome_screen(selected),
+            console=console,
+            screen=True,
+            refresh_per_second=20,
+        ) as live:
+            while True:
+                key = _read_key()
+                if key == "up":
+                    selected = (selected - 1) % len(_MAIN_ITEMS)
+                elif key == "down":
+                    selected = (selected + 1) % len(_MAIN_ITEMS)
+                elif key == "enter":
+                    break
+                elif key in ("escape", "quit"):
+                    selected = len(_MAIN_ITEMS) - 1  # point to Exit
+                    break
+                live.update(_welcome_screen(selected))
+
+        pick = selected
 
         # -- Check for update ------------------------------------------
         if pick == 0:
@@ -680,7 +740,7 @@ def _run_tui_inner() -> None:
             if result is None:
                 continue
             guid, carrier, env = result
-            with console.status(f"[bold {_PURPLE}]Checking for update…[/]"):
+            with console.status(f"[bold {ACCENT}]Checking for update\u2026[/]"):
                 with OTAClient(env) as client:
                     resp = client.check(guid, carrier)
             _show_update(resp)
@@ -691,14 +751,14 @@ def _run_tui_inner() -> None:
             if result is None:
                 continue
             guid, carrier, env = result
-            with console.status(f"[bold {_PURPLE}]Walking update chain…[/]"):
+            with console.status(f"[bold {ACCENT}]Walking update chain\u2026[/]"):
                 with OTAClient(env) as client:
                     updates = client.walk_chain(guid, carrier)
             if updates:
                 _show_chain_table(updates)
             else:
-                console.print("[yellow]No updates found.[/]")
-                console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+                console.print(f"[{WARNING}]No updates found.[/]")
+                console.print(f"\n[{MUTED}]Press any key to continue\u2026[/]")
                 _read_key()
 
         # -- Download updates ------------------------------------------
@@ -709,12 +769,12 @@ def _run_tui_inner() -> None:
             guid, carrier, env = result
             out = Prompt.ask("[bold]Output directory[/]", default="downloads")
             output_dir = Path(out)
-            with console.status(f"[bold {_PURPLE}]Enumerating chain…[/]"):
+            with console.status(f"[bold {ACCENT}]Enumerating chain\u2026[/]"):
                 with OTAClient(env) as client:
                     updates = client.walk_chain(guid, carrier)
             if not updates:
-                console.print("[yellow]No updates to download.[/]")
-                console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+                console.print(f"[{WARNING}]No updates to download.[/]")
+                console.print(f"\n[{MUTED}]Press any key to continue\u2026[/]")
                 _read_key()
                 continue
             total = sum(u.size_mb for u in updates)
@@ -726,17 +786,15 @@ def _run_tui_inner() -> None:
                 continue
             app_cfg = load_app_config()
             saved = download_chain(
-                updates,
-                carrier,
-                output_dir,
+                updates, carrier, output_dir,
                 verify=app_cfg.verify_md5,
             )
             console.print(
-                f"\n[bold green]Downloaded {len(saved)} file(s)[/] → {output_dir}",
+                f"\n[bold {SUCCESS}]Downloaded {len(saved)} file(s)[/] \u2192 {output_dir}",
             )
             for p in saved:
                 console.print(f"  {p.name}")
-            console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+            console.print(f"\n[{MUTED}]Press any key to continue\u2026[/]")
             _read_key()
 
         # -- List servers ----------------------------------------------
