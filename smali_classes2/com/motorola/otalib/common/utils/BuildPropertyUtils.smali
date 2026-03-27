@@ -908,7 +908,7 @@
 .end method
 
 .method public static isDogfoodDevice()Z
-    .locals 2
+    .locals 1
 
     # Modified: Always return true to unlock hidden menus, developer mode,
     # CloudPicker server selection, verbose logging, and crash dumps
@@ -1092,7 +1092,7 @@
 .end method
 
 .method public static isSecure()Z
-    .locals 2
+    .locals 1
 
     # Modified: Always return false to treat as non-production/debug build,
     # enabling staging/dev server selection and developer features
