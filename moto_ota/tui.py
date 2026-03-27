@@ -580,6 +580,112 @@ def _fullscreen_confirm(
 
 
 # =====================================================================
+#  Full-screen display  (show any renderable in penumbra style)
+# =====================================================================
+
+
+def _fullscreen_display(
+    content: RenderableType,
+    *,
+    title: str = "",
+    footer_hint: str = "Press any key to continue",
+) -> None:
+    """Show *content* in a full-screen penumbra display with starfield.
+
+    Blocks until the user presses any key, then returns.
+    """
+
+    def _render() -> RenderableType:
+        w = console.width or 100
+        footer_text = Text.assemble(
+            ("  [", MUTED),
+            ("any key", f"bold {TEXT}"),
+            ("] ", MUTED),
+            (footer_hint, MUTED),
+        )
+        footer = Align.center(footer_text)
+        stars = _star_block(w, 1)
+
+        lay = Layout()
+        lay.split_column(
+            Layout(name="stars", size=1),
+            Layout(name="top", size=2),
+            Layout(name="content", ratio=1),
+            Layout(name="footer", size=2),
+        )
+        lay["stars"].update(stars)
+        if title:
+            heading = Align.center(
+                Text(f"  {title}  ", style=f"bold {ACCENT}"),
+            )
+            lay["top"].update(heading)
+        else:
+            lay["top"].update(Text(""))
+        lay["content"].update(Align.center(content, vertical="middle"))
+        lay["footer"].update(footer)
+        return lay
+
+    with Live(
+        _render(),
+        console=console,
+        screen=True,
+        refresh_per_second=8,
+    ) as live:
+        while True:
+            key = _read_key_timeout(0.15)
+            if key is None:
+                live.update(_render())
+                continue
+            # Any key press exits
+            break
+
+
+def _fullscreen_spinner(
+    message: str,
+):
+    """Return a context manager showing a full-screen spinner.
+
+    Use as ``with _fullscreen_spinner("Checking..."):``
+    The spinner animates via the starfield redraw.
+    """
+
+    def _render() -> RenderableType:
+        w = console.width or 100
+        # Spinner character cycles
+        chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        idx = int(time.monotonic() * 10) % len(chars)
+        spinner = Text.assemble(
+            (f"  {chars[idx]}  ", f"bold {ACCENT}"),
+            (message, f"bold {TEXT}"),
+        )
+        panel = Panel(
+            Padding(Align.center(spinner), (1, 2)),
+            box=box.ROUNDED,
+            border_style=ACCENT2,
+            width=min(50, w - 10),
+        )
+        stars = _star_block(w, 1)
+
+        lay = Layout()
+        lay.split_column(
+            Layout(name="stars", size=1),
+            Layout(name="content", ratio=1),
+            Layout(name="footer", size=1),
+        )
+        lay["stars"].update(stars)
+        lay["content"].update(Align.center(panel, vertical="middle"))
+        lay["footer"].update(_star_block(w, 1))
+        return lay
+
+    return Live(
+        _render(),
+        console=console,
+        screen=True,
+        refresh_per_second=8,
+    )
+
+
+# =====================================================================
 #  Welcome page  (full-screen with animated starfield)
 # =====================================================================
 
@@ -871,15 +977,18 @@ def _edit_config_page(
             return
         if pick == len(fields):
             path = save_fn(cfg)
-            console.print(f"\n[{SUCCESS}]Saved to {path}[/]")
+            msg = Panel(
+                f"[bold {SUCCESS}]Configuration saved![/]\n\n"
+                f"[{MUTED}]{path}[/]",
+                box=box.ROUNDED,
+                border_style=SUCCESS,
+            )
+            _fullscreen_display(msg, title="Saved")
             return
         field_meta = fields[pick]
         current = getattr(cfg, field_meta["key"])
         new_val = _edit_field(field_meta, current)
         setattr(cfg, field_meta["key"], new_val)
-        console.print(
-            f"  -> [{SUCCESS}]{field_meta['label']}[/] = [bold]{new_val}[/]",
-        )
 
 
 def _config_menu() -> None:
@@ -924,22 +1033,21 @@ def _config_menu() -> None:
 
 
 def _show_both_configs() -> None:
-    """Print both config tables."""
+    """Show both config tables in full-screen display."""
     cfg_app = load_app_config()
     cfg_dev = load_device_config()
-    _show_config_table("App Configuration", APP_CONFIG_FIELDS, cfg_app)
-    console.print()
-    _show_config_table("Device Configuration", DEVICE_CONFIG_FIELDS, cfg_dev)
-    console.print(f"\n[{MUTED}]Press any key to continue...[/]")
-    _read_key()
+    table_app = _build_config_table("App Configuration", APP_CONFIG_FIELDS, cfg_app)
+    table_dev = _build_config_table("Device Configuration", DEVICE_CONFIG_FIELDS, cfg_dev)
+    content = Group(table_app, Text(""), table_dev)
+    _fullscreen_display(content, title="Current Configuration")
 
 
-def _show_config_table(
+def _build_config_table(
     title: str,
     fields: list[dict[str, Any]],
     config_obj: object,
-) -> None:
-    """Display a table of current config values."""
+) -> Table:
+    """Build a rich Table of current config values (without printing)."""
     table = Table(
         title=title, show_lines=True,
         box=box.ROUNDED, border_style=ACCENT2,
@@ -954,7 +1062,7 @@ def _show_config_table(
             str(val) if val != "" else f"[{MUTED}](empty)[/]",
             Text(f["description"]),
         )
-    console.print(table)
+    return table
 
 
 # =====================================================================
@@ -1053,9 +1161,7 @@ def _show_update(resp) -> None:
         )
         panel = Panel(body, title="No Update",
                       border_style=WARNING, box=box.ROUNDED)
-    console.print(panel)
-    console.print(f"\n[{MUTED}]Press any key to continue...[/]")
-    _read_key()
+    _fullscreen_display(panel, title="Check Result")
 
 
 def _show_chain_table(chain) -> None:
@@ -1074,15 +1180,17 @@ def _show_chain_table(chain) -> None:
             str(i), u.source_version, u.target_version,
             f"{u.size_mb} MB", u.update_type, u.target_guid[:15],
         )
-    console.print(table)
     total = sum(u.size_mb for u in chain)
-    console.print(
-        f"\n  [bold]Base :[/] {chain[0].source_version}  ->  "
-        f"[bold]Latest:[/] {chain[-1].target_version}  "
-        f"({total:.1f} MB total)",
+    summary = Text.assemble(
+        ("\n  Base : ", f"bold {TEXT}"),
+        (chain[0].source_version, ACCENT),
+        ("  ->  ", TEXT),
+        ("Latest: ", f"bold {TEXT}"),
+        (chain[-1].target_version, SUCCESS),
+        (f"  ({total:.1f} MB total)", MUTED),
     )
-    console.print(f"\n[{MUTED}]Press any key to continue...[/]")
-    _read_key()
+    content = Group(table, summary)
+    _fullscreen_display(content, title="Update Chain")
 
 
 def _show_servers() -> None:
@@ -1093,9 +1201,7 @@ def _show_servers() -> None:
     for env, srv in SERVERS.items():
         style = SUCCESS if "production" in env.value else MUTED
         table.add_row(f"[{style}]{env.value}[/]", srv.host, srv.description)
-    console.print(table)
-    console.print(f"\n[{MUTED}]Press any key to continue...[/]")
-    _read_key()
+    _fullscreen_display(table, title="CDS Servers")
 
 
 def _show_carriers() -> None:
@@ -1107,9 +1213,7 @@ def _show_carriers() -> None:
     for c in CARRIERS:
         st = SUCCESS if c.status == "open" else WARNING
         table.add_row(c.code, c.name, c.region, f"[{st}]{c.status}[/]")
-    console.print(table)
-    console.print(f"\n[{MUTED}]Press any key to continue...[/]")
-    _read_key()
+    _fullscreen_display(table, title="Known Carriers")
 
 
 # =====================================================================
@@ -1185,7 +1289,7 @@ def _run_tui_inner() -> None:
             if result is None:
                 continue
             guid, carrier, env = result
-            with console.status(f"[bold {ACCENT}]Checking for update...[/]"):
+            with _fullscreen_spinner("Checking for update..."):
                 with OTAClient(env) as client:
                     resp = client.check(guid, carrier)
             _show_update(resp)
@@ -1196,15 +1300,19 @@ def _run_tui_inner() -> None:
             if result is None:
                 continue
             guid, carrier, env = result
-            with console.status(f"[bold {ACCENT}]Walking update chain...[/]"):
+            with _fullscreen_spinner("Walking update chain..."):
                 with OTAClient(env) as client:
                     updates = client.walk_chain(guid, carrier)
             if updates:
                 _show_chain_table(updates)
             else:
-                console.print(f"[{WARNING}]No updates found.[/]")
-                console.print(f"\n[{MUTED}]Press any key to continue...[/]")
-                _read_key()
+                _fullscreen_display(
+                    Panel(
+                        f"[{WARNING}]No updates found for this GUID.[/]",
+                        box=box.ROUNDED, border_style=WARNING,
+                    ),
+                    title="No Updates",
+                )
 
         # -- Download updates ------------------------------------------
         elif pick == 2:
@@ -1216,13 +1324,17 @@ def _run_tui_inner() -> None:
             if out is None:
                 continue
             output_dir = Path(out)
-            with console.status(f"[bold {ACCENT}]Enumerating chain...[/]"):
+            with _fullscreen_spinner("Enumerating chain..."):
                 with OTAClient(env) as client:
                     updates = client.walk_chain(guid, carrier)
             if not updates:
-                console.print(f"[{WARNING}]No updates to download.[/]")
-                console.print(f"\n[{MUTED}]Press any key to continue...[/]")
-                _read_key()
+                _fullscreen_display(
+                    Panel(
+                        f"[{WARNING}]No updates to download.[/]",
+                        box=box.ROUNDED, border_style=WARNING,
+                    ),
+                    title="No Updates",
+                )
                 continue
             total = sum(u.size_mb for u in updates)
             if not _fullscreen_confirm(
@@ -1235,13 +1347,16 @@ def _run_tui_inner() -> None:
                 updates, carrier, output_dir,
                 verify=app_cfg.verify_md5,
             )
-            console.print(
-                f"\n[bold {SUCCESS}]Downloaded {len(saved)} file(s)[/] -> {output_dir}",
+            file_list = "\n".join(f"  {p.name}" for p in saved)
+            result_body = (
+                f"[bold {SUCCESS}]Downloaded {len(saved)} file(s)[/]\n"
+                f"[{MUTED}]-> {output_dir}[/]\n\n"
+                f"{file_list}"
             )
-            for p in saved:
-                console.print(f"  {p.name}")
-            console.print(f"\n[{MUTED}]Press any key to continue...[/]")
-            _read_key()
+            _fullscreen_display(
+                Panel(result_body, box=box.ROUNDED, border_style=SUCCESS),
+                title="Download Complete",
+            )
 
         # -- List servers ----------------------------------------------
         elif pick == 3:
