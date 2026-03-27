@@ -923,24 +923,126 @@ e `isChinaDevice()` (`ro.product.is_prc=prc` o carrier=retcn/cmcc/ctcn/cucn):
 #### Servidor China dogfood: `ota-cn-sdc.blurdev.com`
 
 Descubierto en `Configs.smali:6421` y `CloudPickerActivity.smali:145`.
-Es un servidor Google App Engine con versión diferente a producción:
+**Es en realidad `moto-cds-staging` detrás de un proxy nginx/1.14.1:**
 
 ```
-GET /cds/upgrade/1/versions
+GET /cds/upgrade/1/versions -> 200
 {
   "version": "Google App Engine/mainwithdefaults",
-  "applicationVersion": "20260219t144007.4755...",  ← MÁS VIEJO que producción (20260227)
-  "applicationId": "moto-cds",
-  "environment": "Production"                       ← Se reporta como "Production"
+  "applicationVersion": "20260219t144007.475531348487524753",
+  "applicationId": "moto-cds-staging",       ← NO es moto-cds, es staging
+  "environment": "Production"
 }
 ```
 
-**Resultado de pruebas exhaustivas en servidores dev/staging/qa/blurdev:**
+> **Hallazgo:** `ota-cn-sdc.blurdev.com` es un alias de `moto-cds-staging.appspot.com`
+> detrás de nginx/1.14.1. Ambos comparten el mismo `applicationId` y
+> `applicationVersion`. El servidor blurdev sufre timeouts en POST /check
+> pero responde a GET /versions y POST v2/check.
 
-- 10 carriers China+Global × 2 GUIDs × 4 triggeredBy × 4 buildType combos = **0 packages**
-- Contextos ota/fota/modem = todos `proceed=false`
-- Carriers China (retcn, cmcc, ctcn, cucn) = sin contenido en ningún servidor
-- Los servidores dev aceptan requests válidos pero no tienen packages publicados
+### Respuestas completas de todos los servidores (body completo)
+
+#### Identificación de servidores (GET /cds/upgrade/1/versions)
+
+| Servidor | applicationId | applicationVersion | Server header |
+|----------|--------------|-------------------|---------------|
+| `moto-cds.svcmot.cn` | `moto-cds` | `20260227t153823...` | nginx/1.14.1 |
+| `moto-cds.appspot.com` | `moto-cds` | `20260227t153823...` | Google Frontend |
+| `moto-cds-staging.appspot.com` | `moto-cds-staging` | `20260219t144007...` | Google Frontend |
+| `moto-cds-qa.appspot.com` | `moto-cds-qa` | `20251204t182430...` | Google Frontend |
+| `moto-cds-dev.appspot.com` | `moto-cds-dev` | `20260217t112859...` | Google Frontend |
+| `ota-cn-sdc.blurdev.com` | `moto-cds-staging` | `20260219t144007...` | nginx/1.14.1 |
+
+> Todos reportan `environment: "Production"` independientemente de su función real.
+
+#### Respuesta `proceed=false` completa (servidores sin paquetes)
+
+Cuando un servidor no tiene contenido, retorna **exactamente** esta estructura:
+
+```json
+{
+  "proceed": false,
+  "context": "ota",
+  "contextKey": "2d94974667acf1d",
+  "content": null,
+  "contentTimestamp": 0,
+  "contentResources": null,
+  "trackingId": null,
+  "reportingTags": null,
+  "pollAfterSeconds": 172800,
+  "smartUpdateBitmap": 7,
+  "uploadFailureLogs": false
+}
+```
+
+Header: `x-cds-content-exists: false`
+
+**Diferencias de `smartUpdateBitmap` por servidor:**
+
+| Servidor | smartUpdateBitmap |
+|----------|-------------------|
+| Producción (svcmot.cn, appspot.com) | `7` |
+| Staging (staging, blurdev) | `7` |
+| QA | `-1` |
+| Dev | `11` |
+
+Los contextos `fota` y `modem` retornan la misma estructura con `content: null`.
+
+#### Endpoints que retornan error genérico
+
+Los siguientes endpoints retornan el mismo error GAE catch-all en **todos** los servidores:
+
+```json
+{"code": "UPGRADE_RESOURCE_NOT_FOUND", "description": "Requested resource not found.", "suggestion": "Please check the URI and make sure the resource is valid."}
+```
+
+| Endpoint | Método | Status |
+|----------|--------|--------|
+| `/cds/upgrade/1/resources/ctx/ota/key/{GUID}` | POST | 200 |
+| `/cds/upgrade/1/state/ctx/ota/key/{GUID}` | POST | 200 |
+| `/cds/factory/1/check/ctx/ota/key/{GUID}` | POST | 200 |
+| `/cds` | GET | 200 |
+| Cualquier path no válido | GET/POST | 200 |
+
+> **Nota:** `/cds/factory/1/check` NO es un endpoint válido — retorna el
+> mismo error genérico que cualquier URL inventada. El servidor GAE tiene un
+> catch-all que responde 200 + UPGRADE_RESOURCE_NOT_FOUND para paths no
+> registrados.
+
+#### Raíz del servidor (GET /)
+
+Todos los servidores retornan una página HTML genérica de Google App Engine:
+```html
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<!-- The HTML 4.01 Transitional DOCTYPE declaration -->
+```
+
+#### Servidor blurdev — comportamiento de timeouts
+
+`ota-cn-sdc.blurdev.com` tiene comportamiento errático:
+
+| Endpoint | Resultado |
+|----------|-----------|
+| GET /cds/upgrade/1/versions | ✅ 200 OK (responde rápido) |
+| GET / | ✅ 200 OK (página HTML GAE) |
+| POST v2/check | ✅ 200 OK (`proceed:false`) |
+| POST /state | ✅ 200 OK (UPGRADE_RESOURCE_NOT_FOUND) |
+| POST v1/check (ota/fota/modem) | ❌ **Timeout** (15s) |
+| POST /resources | ❌ **Timeout** (15s) |
+| POST /factory/1/check | ❌ **Timeout** (15s) |
+| GET /cds | ❌ **Timeout** (15s) |
+
+> Los timeouts en v1/check sugieren que el proxy nginx no reenvía
+> correctamente ciertos POSTs al backend GAE de staging, pero v2/check sí funciona.
+
+### Resultado de pruebas exhaustivas en servidores dev/staging/qa/blurdev
+
+- 2 carriers (amxmx + retcn) × 3 contextos (ota/fota/modem) × 4 servidores = **0 packages**
+- Todos retornan `proceed:false, content:null, x-cds-content-exists:false`
+- Carriers China (retcn, cmcc, ctcn, cucn) = sin contenido en **ningún** servidor
+- `/cds/factory/1/check` → error genérico (path no registrado, no endpoint real)
+- API v2 (`/cds/upgrade/2/check`) retorna los mismos resultados que v1
+- Los servidores dev aceptan requests válidos pero **no tienen packages publicados**
 
 ### Conclusión del análisis
 
