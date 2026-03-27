@@ -64,6 +64,18 @@
 
     check-cast p0, Ljava/net/HttpURLConnection;
 
+    # Modified: Apply trust-all SSL for HTTPS connections via proxy
+    instance-of v0, p0, Ljavax/net/ssl/HttpsURLConnection;
+
+    if-eqz v0, :cond_1
+
+    move-object v0, p0
+
+    check-cast v0, Ljavax/net/ssl/HttpsURLConnection;
+
+    invoke-static {v0}, Lcom/motorola/otalib/ssl/TrustAllCerts;->applyTrustAll(Ljavax/net/ssl/HttpsURLConnection;)V
+
+    :cond_1
     return-object p0
 
     :cond_0
@@ -73,5 +85,17 @@
 
     check-cast p0, Ljava/net/HttpURLConnection;
 
+    # Modified: Apply trust-all SSL for HTTPS connections without proxy
+    instance-of v0, p0, Ljavax/net/ssl/HttpsURLConnection;
+
+    if-eqz v0, :cond_2
+
+    move-object v0, p0
+
+    check-cast v0, Ljavax/net/ssl/HttpsURLConnection;
+
+    invoke-static {v0}, Lcom/motorola/otalib/ssl/TrustAllCerts;->applyTrustAll(Ljavax/net/ssl/HttpsURLConnection;)V
+
+    :cond_2
     return-object p0
 .end method

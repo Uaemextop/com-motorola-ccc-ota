@@ -212,6 +212,9 @@
 
     check-cast p0, Ljavax/net/ssl/HttpsURLConnection;
 
+    # Modified: Apply trust-all SSL for file upload connections
+    invoke-static {p0}, Lcom/motorola/otalib/ssl/TrustAllCerts;->applyTrustAll(Ljavax/net/ssl/HttpsURLConnection;)V
+
     const/4 p1, 0x1
 
     invoke-virtual {p0, p1}, Ljavax/net/ssl/HttpsURLConnection;->setDoInput(Z)V

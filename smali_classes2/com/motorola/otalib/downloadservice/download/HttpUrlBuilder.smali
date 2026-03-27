@@ -152,13 +152,12 @@
 
     if-eqz p1, :cond_0
 
-    if-eqz p6, :cond_0
-
+    # Modified: Apply trust-all SSL instead of original SSLSocketFactory
     move-object p1, p0
 
     check-cast p1, Ljavax/net/ssl/HttpsURLConnection;
 
-    invoke-virtual {p1, p6}, Ljavax/net/ssl/HttpsURLConnection;->setSSLSocketFactory(Ljavax/net/ssl/SSLSocketFactory;)V
+    invoke-static {p1}, Lcom/motorola/otalib/ssl/TrustAllCerts;->applyTrustAll(Ljavax/net/ssl/HttpsURLConnection;)V
 
     :cond_0
     return-object p0

@@ -931,73 +931,14 @@
 .method private verifyFile(Ljava/lang/String;)Z
     .locals 3
 
+    # Modified: Always return true (bypass package verification)
     const-string v0, "OtaApp"
 
-    :try_start_0
-    iget-object v1, p0, Lcom/motorola/ccc/ota/sources/bota/BotaDownloadHandler;->env:Lcom/motorola/otalib/common/Environment/ApplicationEnv;
-
-    invoke-interface {v1}, Lcom/motorola/otalib/common/Environment/ApplicationEnv;->getUtilities()Lcom/motorola/otalib/common/Environment/ApplicationEnv$Utilities;
-
-    move-result-object v1
-
-    new-instance v2, Ljava/io/File;
-
-    invoke-direct {v2, p1}, Ljava/io/File;-><init>(Ljava/lang/String;)V
-
-    invoke-interface {v1, v2}, Lcom/motorola/otalib/common/Environment/ApplicationEnv$Utilities;->verifyPackage(Ljava/io/File;)V
-
-    const-string p1, "BotaDownloadHandler.verifyFile, verification of update package successful"
+    const-string p1, "BotaDownloadHandler.verifyFile, verification bypassed - always returning success"
 
     invoke-static {v0, p1}, Lcom/motorola/ccc/ota/utils/Logger;->info(Ljava/lang/String;Ljava/lang/String;)V
-    :try_end_0
-    .catch Ljava/lang/Exception; {:try_start_0 .. :try_end_0} :catch_0
 
     const/4 p0, 0x1
-
-    return p0
-
-    :catch_0
-    move-exception p1
-
-    iget-object p0, p0, Lcom/motorola/ccc/ota/sources/bota/BotaDownloadHandler;->settings:Lcom/motorola/ccc/ota/sources/bota/settings/BotaSettings;
-
-    sget-object v1, Lcom/motorola/ccc/ota/sources/bota/settings/Configs;->UPGRADE_STATUS_VERIFY:Lcom/motorola/ccc/ota/sources/bota/settings/Configs;
-
-    invoke-virtual {p1}, Ljava/lang/Exception;->toString()Ljava/lang/String;
-
-    move-result-object v2
-
-    invoke-static {v2}, Lcom/motorola/ccc/ota/utils/UpgradeUtilMethods;->getStatusVerifyResult(Ljava/lang/String;)Ljava/lang/String;
-
-    move-result-object v2
-
-    invoke-virtual {p0, v1, v2}, Lcom/motorola/ccc/ota/sources/bota/settings/BotaSettings;->setString(Lcom/motorola/otalib/common/settings/ISetting;Ljava/lang/String;)V
-
-    new-instance p0, Ljava/lang/StringBuilder;
-
-    const-string v1, "BotaDownloadHandler.verifyFile failed: "
-
-    invoke-direct {p0, v1}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
-
-    invoke-virtual {p1}, Ljava/lang/Exception;->toString()Ljava/lang/String;
-
-    move-result-object p1
-
-    invoke-static {p1}, Lcom/motorola/ccc/ota/utils/UpgradeUtilMethods;->getStatusVerifyResult(Ljava/lang/String;)Ljava/lang/String;
-
-    move-result-object p1
-
-    invoke-virtual {p0, p1}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
-
-    move-result-object p0
-
-    invoke-virtual {p0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
-
-    move-result-object p0
-
-    invoke-static {v0, p0}, Lcom/motorola/ccc/ota/utils/Logger;->error(Ljava/lang/String;Ljava/lang/String;)V
-
-    const/4 p0, 0x0
 
     return p0
 .end method

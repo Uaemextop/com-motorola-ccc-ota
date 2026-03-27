@@ -6387,6 +6387,8 @@
 .method public static getMasterCloud()Ljava/lang/String;
     .locals 1
 
+    # Modified: Default to staging server for dev/staging OTA access
+    # CloudPickerActivity can override this via BotaSettings
     invoke-static {}, Lcom/motorola/ccc/ota/env/OtaApplication;->getGlobalContext()Landroid/content/Context;
 
     move-result-object v0
@@ -6395,55 +6397,13 @@
 
     move-result v0
 
-    if-eqz v0, :cond_2
+    if-eqz v0, :cond_0
 
-    invoke-static {}, Lcom/motorola/otalib/common/utils/BuildPropertyUtils;->isDogfoodDevice()Z
-
-    move-result v0
-
-    if-nez v0, :cond_1
-
-    invoke-static {}, Lcom/motorola/otalib/common/utils/BuildPropertyUtils;->isSecure()Z
-
-    move-result v0
-
-    if-nez v0, :cond_0
-
-    goto :goto_0
-
-    :cond_0
-    const-string v0, "moto-cds.svcmot.cn"
-
-    return-object v0
-
-    :cond_1
-    :goto_0
     const-string v0, "ota-cn-sdc.blurdev.com"
 
     return-object v0
 
-    :cond_2
-    invoke-static {}, Lcom/motorola/otalib/common/utils/BuildPropertyUtils;->isDogfoodDevice()Z
-
-    move-result v0
-
-    if-nez v0, :cond_4
-
-    invoke-static {}, Lcom/motorola/otalib/common/utils/BuildPropertyUtils;->isSecure()Z
-
-    move-result v0
-
-    if-nez v0, :cond_3
-
-    goto :goto_1
-
-    :cond_3
-    const-string v0, "moto-cds.appspot.com"
-
-    return-object v0
-
-    :cond_4
-    :goto_1
+    :cond_0
     const-string v0, "moto-cds-staging.appspot.com"
 
     return-object v0
