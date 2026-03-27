@@ -80,8 +80,17 @@ class OTAClient:
 
         Mirrors the flow in *CheckUpdateHandler.smali*:
           CheckRequestBuilder → URL construction → POST → parse response.
+
+        The context key in the URL comes from ``ro.mot.build.guid``.  If the
+        caller did not supply one, the build fingerprint or build ID is used
+        as a best-effort fallback.
         """
-        url = self._url.check_url(request.extra_info.build_id)
+        ctx_key = (
+            request.context_key
+            or request.extra_info.fingerprint
+            or request.extra_info.build_id
+        )
+        url = self._url.check_url(ctx_key)
         headers = self._auth.get_check_headers()
         payload = request.to_dict()
 

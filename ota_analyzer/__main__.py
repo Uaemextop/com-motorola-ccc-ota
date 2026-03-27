@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -17,6 +18,26 @@ from ota_analyzer.analysis import BinaryAnalyzer, SmaliParser
 from ota_analyzer.client import OTAClient
 from ota_analyzer.config import Environment, Region
 from ota_analyzer.models import CheckRequest, DeviceInfo, ExtraInfo, IdentityInfo
+
+
+def _parse_fingerprint(fp: str) -> dict[str, str]:
+    """Extract fields from a build fingerprint string.
+
+    Format: ``brand/product/device:osVersion/buildId/incremental:type/tags``
+
+    Example::
+
+        motorola/lamul_g/lamul:15/VVTA35.51-18-6/1e9f09:user/release-keys
+    """
+    m = re.match(
+        r"(?P<brand>[^/]+)/(?P<product>[^/]+)/(?P<device>[^:]+):"
+        r"(?P<osVersion>[^/]+)/(?P<buildId>[^/]+)/(?P<incremental>[^:]+):"
+        r"(?P<type>[^/]+)/(?P<tags>.+)",
+        fp,
+    )
+    if not m:
+        return {}
+    return m.groupdict()
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -29,11 +50,26 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     # -- check-update ------------------------------------------------------
     chk = sub.add_parser("check-update", help="Check for OTA updates")
     chk.add_argument("--model", required=True, help="Device model (ro.product.model)")
-    chk.add_argument("--product", default="", help="Product name (ro.build.product)")
-    chk.add_argument("--build-id", default="", help="Current build ID")
-    chk.add_argument("--serial", default="", help="Device serial number")
+    chk.add_argument("--product", default="", help="Product name (ro.vendor.product.display)")
+    chk.add_argument("--build-id", default="", help="Current build ID / number")
+    chk.add_argument("--serial", default="", help="Device serial number (Build.getSerial)")
     chk.add_argument("--carrier", default="", help="Carrier name")
-    chk.add_argument("--language", default="en-US", help="Device locale")
+    chk.add_argument("--language", default="es-MX", help="Device locale (e.g. es-MX)")
+    chk.add_argument("--country", default="", help="Country code (ro.product.locale.region)")
+    chk.add_argument("--imei", default="", help="Primary IMEI")
+    chk.add_argument("--imei2", default="", help="Secondary IMEI (dual-SIM)")
+    chk.add_argument("--mccmnc", default="", help="Primary MCC+MNC")
+    chk.add_argument("--mccmnc2", default="", help="Secondary MCC+MNC")
+    chk.add_argument("--guid", default="", help="Device GUID (ro.mot.build.guid) – used as URL context key")
+    chk.add_argument("--fingerprint", default="", help="Build fingerprint (ro.build.fingerprint). Auto-fills brand, product, device, osVersion, buildId, tags, type.")
+    chk.add_argument("--sku", default="", help="Hardware SKU (ro.boot.hardware.sku)")
+    chk.add_argument("--security-patch", default="", help="Security patch date (ro.build.version.security_patch)")
+    chk.add_argument("--build-date-utc", default="", help="Build date UTC (ro.build.date.utc)")
+    chk.add_argument("--os-version", default="", help="Android version (Build.VERSION.RELEASE)")
+    chk.add_argument("--os-string", default="Linux", help="OS string (System.getProperty os.name, default: Linux)")
+    chk.add_argument("--hardware", default="", help="Hardware platform (Build.HARDWARE)")
+    chk.add_argument("--bootloader", default="", help="Bootloader version (Build.BOOTLOADER)")
+    chk.add_argument("--radio", default="", help="Radio version (Build.getRadioVersion)")
     chk.add_argument(
         "--region",
         choices=["global", "prc"],
@@ -100,20 +136,89 @@ def _cmd_check_update(args: argparse.Namespace) -> int:
     region = Region.PRC if args.region == "prc" else Region.GLOBAL
     environment = Environment(args.env)
 
+    # Auto-fill fields from fingerprint when provided
+    # Format: brand/product/device:osVersion/buildId/incremental:type/tags
+    fp_fields = _parse_fingerprint(args.fingerprint) if args.fingerprint else {}
+    build_id = args.build_id or fp_fields.get("buildId", "")
+    os_version = args.os_version or fp_fields.get("osVersion", "")
+    product = args.product or fp_fields.get("product", "")
+    device = fp_fields.get("device", args.product)
+    brand = fp_fields.get("brand", "motorola")
+    incremental = fp_fields.get("incremental", "")
+    build_type = fp_fields.get("type", "user")
+    build_tags = fp_fields.get("tags", "release-keys")
+    serial = args.serial or "SERIAL_NUMBER_NOT_AVAILABLE"
+    is_prc = region == Region.PRC
+
     request = CheckRequest(
+        request_id=serial,  # id = BuildPropertyUtils.getId() = serial
         device_info=DeviceInfo(
+            manufacturer="motorola",
+            hardware=args.hardware,
+            brand=brand,
             model=args.model,
-            product=args.product,
-            carrier=args.carrier,
-            is_prc=(region == Region.PRC),
-            user_language=args.language,
+            product=product,
+            os=args.os_string,
+            os_version=os_version,
+            country=args.country,
+            region=args.country,
+            language=args.language.split("-")[0] if "-" in args.language else args.language,
+            user_language=args.language.replace("-", "_"),
         ),
-        extra_info=ExtraInfo(build_id=args.build_id),
-        identity_info=IdentityInfo(serial_number=args.serial),
+        extra_info=ExtraInfo(
+            carrier=args.carrier,
+            bootloader_version=args.bootloader,
+            brand=brand,
+            model=args.model,
+            fingerprint=args.fingerprint,
+            radio_version=args.radio,
+            build_tags=build_tags,
+            build_type=build_type,
+            build_device=device,
+            build_id=build_id,
+            build_display_id=build_id,
+            build_incremental_version=incremental,
+            release_version=os_version,
+            ota_source_sha1=args.guid,
+            network="wifi",
+            apk_version=3500094,
+            provisioned_time=0,
+            incremental_version=0,
+            user_location="CN" if is_prc else "Non-CN",
+            bootloader_status="locked",
+            device_rooted="false",
+            is_4gb_ram=False,
+            device_chipset="Others",
+            imei=args.imei or "IMEI_NOT_AVAILABLE",
+            mccmnc=args.mccmnc or "MCCMNC_NOT_AVAILABLE",
+            imei2=args.imei2 or "IMEI_NOT_AVAILABLE",
+            mccmnc2=args.mccmnc2 or "MCCMNC_NOT_AVAILABLE",
+            security_version=args.security_patch,
+        ),
+        identity_info=IdentityInfo(serial_number=serial),
+        context_key=args.guid,
     )
 
-    with OTAClient.create(region=region, environment=environment) as client:
-        response = client.check_update(request)
+    print("=" * 60)
+    print("  Motorola OTA Update Check")
+    print("=" * 60)
+    print(f"  Device      : {args.model}")
+    print(f"  Product     : {product}")
+    print(f"  Build       : {build_id}")
+    print(f"  Fingerprint : {args.fingerprint or '(not provided)'}")
+    print(f"  GUID        : {args.guid or '(not provided)'}")
+    print(f"  IMEI        : {args.imei or '(not provided)'}")
+    print(f"  Serial      : {serial}")
+    print(f"  Server      : {environment.value} ({region.value})")
+    print("=" * 60)
+    print()
+
+    try:
+        with OTAClient.create(region=region, environment=environment) as client:
+            response = client.check_update(request)
+    except ConnectionError as exc:
+        print(f"❌ Connection failed: {exc}", file=sys.stderr)
+        return 1
 
     print(json.dumps(response.raw or {}, indent=2, ensure_ascii=False))
 
@@ -122,8 +227,15 @@ def _cmd_check_update(args: argparse.Namespace) -> int:
         print(f"   Tracking ID : {response.tracking_id}")
         print(f"   Context     : {response.context}")
         print(f"   Context Key : {response.context_key}")
+        if response.content:
+            for key in ("title", "description", "size", "version"):
+                val = response.content.get(key, "")
+                if val:
+                    print(f"   {key.title():<12s}: {val}")
     else:
         print("\nℹ️  No update available.")
+        print(f"   Poll again in: {response.poll_after_seconds}s "
+              f"({response.poll_after_seconds // 3600}h)")
 
     return 0
 
