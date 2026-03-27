@@ -827,15 +827,84 @@ Archivos con configuración OTA:
 
 ### Resultado del brute force
 
-| Prueba | Resultado |
-|--------|-----------|
-| GUID adyacente (±50) | 0 nuevos GUIDs encontrados |
-| SHA1 de build strings | 0 coincidencias |
-| Campos body no documentados | Server rechaza (400) campos top-level desconocidos |
-| Campos extraInfo inventados | Server los ignora — no afectan resultado |
-| URL contexts alternativos | Solo `ctx=ota` funciona; fota/modem/firmware/system/recovery = sin packages |
-| triggeredBy alternativo | Solo `"user"` devuelve updates en producción |
-| Carriers whitelisted | attmx/retin/retar/amxar ahora devuelven updates para GUID 2d94974667acf1d |
+**El servidor CDS ignora TODOS los campos del request excepto 3:**
+`carrier`, `otaSourceSha1` (GUID) y `vitalUpdate`. El campo `triggeredBy`
+debe ser `"user"` para obtener updates. Todo lo demás es ignorado.
+
+| Prueba | Parámetros probados | Resultado |
+|--------|--------------------|-----------| 
+| Product names | 33 variantes (lamu_g_eng, lamu_factory, lamu_soak, etc.) | Todos devuelven el mismo paquete |
+| buildType × buildTags | 30 combinaciones (user/userdebug/eng/debug/test/factory × release/test/dev/eng/debug-keys) | Todos devuelven el mismo paquete |
+| Device flags | 21 combinaciones (isDogfoodDevice, isProductionDevice, isSoakDevice, channelId=beta/eng/factory, buildVariant=eng, etc.) | Todos devuelven el mismo paquete |
+| Device models | 10 modelos diferentes (razr, edge, thinkphone, etc.) | Todos devuelven el mismo paquete |
+| GUID adyacente (±50) | 100 GUIDs probados | 0 nuevos GUIDs |
+| URL contexts | 32 probados (ota/fota/modem/firmware/factory/eng/debug/soak/beta/qa/dogfood...) | Solo `ctx=ota` funciona |
+| API versions | v1-v9 | Solo v1 y v2 devuelven updates |
+| URL patterns alternativas | 24 paths distintas (/cds/factory/, /cds/full/, /api/v1/, etc.) | Solo `/cds/upgrade/1/check/ctx/ota/key/` funciona |
+| Servers no-producción | staging + qa + dev con user/polling/setup | 0 packages disponibles |
+| Resources endpoint | 4 payloads con trackingId/contentTimestamp | UPGRADE_RESOURCE_NOT_FOUND siempre |
+| State endpoint | downloaded/installed/available | UPGRADE_RESOURCE_NOT_FOUND siempre |
+
+### Información del servidor CDS
+
+```
+GET /cds/upgrade/1/versions
+{
+  "version": "Google App Engine/mainwithdefaults",
+  "applicationVersion": "20260227t153823.475717825022236165",
+  "applicationId": "moto-cds",
+  "environment": "Production"
+}
+```
+
+Response headers del check endpoint:
+```
+Server: nginx/1.14.1 (svcmot.cn) / Google Frontend (appspot.com)
+Content-Type: application/json;charset=utf-8
+x-cds-content-exists: true|false
+cache-control: no-cache, no-store, must-revalidate
+pragma: no-cache
+content-encoding: gzip
+Alt-Svc: h3=":443"; ma=2592000
+```
+
+### Todos los campos de la response `content` (69 campos)
+
+```
+annoy, installTime, showPreDownloadDialog, showDownloadOptions,
+preDownloadNotificationExpiryMins, preInstallNotificationExpiryMins,
+lowDataStorageDeferCount, lowDataStorageReminder, reserveSpaceInMb,
+forced, wifionly, rebootRequired, mccmncListType, mccListType,
+serialNoListType, emailListType, imeiListType, deploymentPlanPhase,
+optionalUpdateDeferCount, criticalUpdateDeferCount, criticalUpdateReminder,
+criticalUpdateExtraWaitPeriod, criticalUpdateExtraWaitCount,
+optionalUpdateCancelReminderDays, minBatteryRequiredForInstall,
+showDownloadProgress, showPreInstallScreen, showPostInstallScreen,
+serviceControlEnabled, serviceTimeoutSeconds, continueOnServiceError,
+severityType, deploymentPhaseForAdvancedNotice, upgradeNotification,
+preInstallNotes, postInstallNotes, postInstallFailureMessage,
+advancedNotice, releaseNotes, forceUpgradeTime, forceDownloadTime,
+forceInstallTime, policyBundle, featureEnableBitmap, installReminder,
+preDownloadInstructions, preInstallInstructions, packageID, size,
+md5_checksum, flavour, minVersion, version, model, otaSourceSha1,
+otaTargetSha1, sourceBuildTimestamp, targetBuildTimestamp,
+displayVersion, sourceDisplayVersion, oemConfigUpdate, abInstallType,
+streamingData, updateType, uiWorkflowControl, downloadStartTime,
+downloadEndTime, daysToCancelUpdate, trackingId, reportingTags
+```
+
+Campo `streamingData` contiene headers para update_engine:
+```json
+{
+  "header": {
+    "vitalUpdate": "false",
+    "FILE_HASH": "base64...",
+    "FILE_SIZE": "...",
+    "METADATA_HASH": "base64...",
+    "METADATA_SIZE": "..."
+  }
+}
+```
 
 ### Conclusión del análisis
 
