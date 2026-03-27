@@ -906,6 +906,42 @@ Campo `streamingData` contiene headers para update_engine:
 }
 ```
 
+### Servidores CDS — Lógica de routing completa (del smali)
+
+La app selecciona servidor según `isDogfoodDevice()` (`ro.product.is_production=false`)
+e `isChinaDevice()` (`ro.product.is_prc=prc` o carrier=retcn/cmcc/ctcn/cucn):
+
+| Condición | Servidor | Propósito |
+|-----------|----------|-----------|
+| Production + Global | `moto-cds.appspot.com` | OTA producción global |
+| Production + China | `moto-cds.svcmot.cn` | OTA producción China/LATAM |
+| Dogfood/non-secure + Global | `moto-cds-staging.appspot.com` | Builds dogfood global |
+| Dogfood/non-secure + China | `ota-cn-sdc.blurdev.com` | Builds dogfood China (**nuevo**) |
+| QA (manual via CloudPicker) | `moto-cds-qa.appspot.com` | Testing QA |
+| Dev (manual via CloudPicker) | `moto-cds-dev.appspot.com` | Testing Dev |
+
+#### Servidor China dogfood: `ota-cn-sdc.blurdev.com`
+
+Descubierto en `Configs.smali:6421` y `CloudPickerActivity.smali:145`.
+Es un servidor Google App Engine con versión diferente a producción:
+
+```
+GET /cds/upgrade/1/versions
+{
+  "version": "Google App Engine/mainwithdefaults",
+  "applicationVersion": "20260219t144007.4755...",  ← MÁS VIEJO que producción (20260227)
+  "applicationId": "moto-cds",
+  "environment": "Production"                       ← Se reporta como "Production"
+}
+```
+
+**Resultado de pruebas exhaustivas en servidores dev/staging/qa/blurdev:**
+
+- 10 carriers China+Global × 2 GUIDs × 4 triggeredBy × 4 buildType combos = **0 packages**
+- Contextos ota/fota/modem = todos `proceed=false`
+- Carriers China (retcn, cmcc, ctcn, cucn) = sin contenido en ningún servidor
+- Los servidores dev aceptan requests válidos pero no tienen packages publicados
+
 ### Conclusión del análisis
 
 **Toda la lógica de OTA está en MotoOta.apk** (ya decompilado en este repo).
