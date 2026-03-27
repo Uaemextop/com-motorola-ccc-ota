@@ -83,9 +83,9 @@ class ExtraInfo:
     apk_version: int = 3500094               # OTA app versionCode (integer)
     provisioned_time: int = 0                # long – last provision timestamp
     incremental_version: int = 0             # integer – incremental version
-    additional_info: str = ""                # extra info string
+    additional_info: str = ""                # extra info string (JSON with battery/memory)
     user_location: str = "Non-CN"            # "CN" or "Non-CN"
-    bootloader_status: str = "locked"        # locked / unlocked / not-applicable
+    bootloader_status: str = "not-applicable"  # locked / unlocked / not-applicable
     device_rooted: str = "false"             # false / true / enableVerity / deviceRemounted
     is_4gb_ram: bool = False                 # boolean
     device_chipset: str = "Others"           # "Qualcomm" or "Others"
@@ -111,11 +111,22 @@ class ExtraInfo:
     # Build & version (lines 1078-1125)
     ro_mot_version: int = -1                 # ro.mot.version (integer, default -1)
     ro_enterpriseedition: bool = False       # isMotoSettingsGlobalEnterpriseEditionFlagSet()
-    ro_virtual_ab_enabled: bool = False      # doesDeviceSupportVABUpdate()
+    ro_virtual_ab_enabled: bool = True       # doesDeviceSupportVABUpdate()
     vital_update: bool = False               # BotaSettings FLAG_IS_VITAL_UPDATE
 
+    # Additional fields seen in HAR check request
+    auto_download_policy_set: bool = False
+    disable_ota_update_policy_set: bool = False
+    is_device_under_freeze_period: bool = False
+    client_state: str = "IDLE"
+    polling_interval_ms: str = ""
+    prev_session_tracking_id: str = ""
+    user_trigger_launch_point: str = "settingsCheckUpdate"
+    update_preference_visited_count: str = "0"
+    update_preference_visited_from_update_complete_count: str = "0"
+
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "clientIdentity": self.client_identity,
             "carrier": self.carrier,
             "bootloaderVersion": self.bootloader_version,
@@ -160,7 +171,19 @@ class ExtraInfo:
             "ro.enterpriseedition": self.ro_enterpriseedition,
             "ro.virtual_ab.enabled": self.ro_virtual_ab_enabled,
             "vitalUpdate": self.vital_update,
+            "autoDownloadPolicySet": self.auto_download_policy_set,
+            "disableOtaUpdatePolicySet": self.disable_ota_update_policy_set,
+            "isDeviceUnderFreezePeriod": self.is_device_under_freeze_period,
+            "clientState": self.client_state,
+            "userTriggerLaunchPoint": self.user_trigger_launch_point,
+            "updatePreferenceVisitedCount": self.update_preference_visited_count,
+            "updatePreferenceVisitedFromUpdateCompleteCount": self.update_preference_visited_from_update_complete_count,
         }
+        if self.polling_interval_ms:
+            data["pollingIntervalInMilliSeconds"] = self.polling_interval_ms
+        if self.prev_session_tracking_id:
+            data["prevSessionTrackingId"] = self.prev_session_tracking_id
+        return data
 
 
 @dataclass

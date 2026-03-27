@@ -66,15 +66,22 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     chk.add_argument("--security-patch", default="", help="Security patch date (ro.build.version.security_patch)")
     chk.add_argument("--build-date-utc", default="", help="Build date UTC (ro.build.date.utc)")
     chk.add_argument("--os-version", default="", help="Android version (Build.VERSION.RELEASE)")
-    chk.add_argument("--os-string", default="Linux", help="OS string (System.getProperty os.name, default: Linux)")
-    chk.add_argument("--hardware", default="", help="Hardware platform (Build.HARDWARE)")
+    chk.add_argument("--os-string", default="Linux:null:null", help="OS string (from HAR: Linux:null:null)")
+    chk.add_argument("--hardware", default="", help="Hardware platform (Build.HARDWARE, e.g. mt6768)")
     chk.add_argument("--bootloader", default="", help="Bootloader version (Build.BOOTLOADER)")
     chk.add_argument("--radio", default="", help="Radio version (Build.getRadioVersion)")
+    chk.add_argument("--dev-region", default="US", help="Device region (ro.product.locale region part)")
+    chk.add_argument("--provisioned-time", type=int, default=0, help="Provisioned time (long timestamp)")
+    chk.add_argument("--additional-info", default="", help="Additional info JSON string (battery/memory/network)")
+    chk.add_argument("--product-wave", default="unknown", help="Product wave (ro.mot.product_wave)")
+    chk.add_argument("--build-product-increment", default="unknown", help="Build product increment (ro.mot.build.product.increment)")
+    chk.add_argument("--veritymode", default="unknown", help="Verity mode (ro.boot.veritymode)")
+    chk.add_argument("--system-verified", default="unknown", help="System verified (partition.system.verified)")
     chk.add_argument(
         "--region",
         choices=["global", "prc"],
-        default="global",
-        help="Server region",
+        default="prc",
+        help="Server region (HAR shows moto-cds.svcmot.cn works)",
     )
     chk.add_argument(
         "--env",
@@ -141,14 +148,14 @@ def _cmd_check_update(args: argparse.Namespace) -> int:
     fp_fields = _parse_fingerprint(args.fingerprint) if args.fingerprint else {}
     build_id = args.build_id or fp_fields.get("buildId", "")
     os_version = args.os_version or fp_fields.get("osVersion", "")
-    product = args.product or fp_fields.get("product", "")
+    # HAR shows deviceInfo.product is empty ("") — NOT from fingerprint
+    product = args.product
     device = fp_fields.get("device", args.product)
     brand = fp_fields.get("brand", "motorola")
     incremental = fp_fields.get("incremental", "")
     build_type = fp_fields.get("type", "user")
     build_tags = fp_fields.get("tags", "release-keys")
     serial = args.serial or "SERIAL_NUMBER_NOT_AVAILABLE"
-    is_prc = region == Region.PRC
 
     request = CheckRequest(
         request_id=serial,  # id = BuildPropertyUtils.getId() = serial
@@ -157,11 +164,11 @@ def _cmd_check_update(args: argparse.Namespace) -> int:
             hardware=args.hardware,
             brand=brand,
             model=args.model,
-            product=product,
-            os=args.os_string,
+            product=product,  # HAR: empty string
+            os=args.os_string,  # HAR: "Linux:null:null"
             os_version=os_version,
             country=args.country,
-            region=args.country,
+            region=args.dev_region,
             language=args.language.split("-")[0] if "-" in args.language else args.language,
             user_language=args.language.replace("-", "_"),
         ),
@@ -180,12 +187,13 @@ def _cmd_check_update(args: argparse.Namespace) -> int:
             build_incremental_version=incremental,
             release_version=os_version,
             ota_source_sha1=args.guid,
-            network="wifi",
+            network="WIFI",  # HAR: uppercase
             apk_version=3500094,
-            provisioned_time=0,
+            provisioned_time=args.provisioned_time,
             incremental_version=0,
-            user_location="CN" if is_prc else "Non-CN",
-            bootloader_status="locked",
+            additional_info=args.additional_info,
+            user_location="Non-CN",
+            bootloader_status="not-applicable",  # HAR value
             device_rooted="false",
             is_4gb_ram=False,
             device_chipset="Others",
@@ -194,6 +202,11 @@ def _cmd_check_update(args: argparse.Namespace) -> int:
             imei2=args.imei2 or "IMEI_NOT_AVAILABLE",
             mccmnc2=args.mccmnc2 or "MCCMNC_NOT_AVAILABLE",
             security_version=args.security_patch,
+            ro_mot_product_wave=args.product_wave,
+            ro_mot_build_product_increment=args.build_product_increment,
+            ro_boot_veritymode=args.veritymode,
+            partition_system_verified=args.system_verified,
+            ro_virtual_ab_enabled=True,  # HAR value
         ),
         identity_info=IdentityInfo(serial_number=serial),
         context_key=args.guid,

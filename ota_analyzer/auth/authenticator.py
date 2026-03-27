@@ -1,9 +1,16 @@
 """Header-based authenticator for Motorola CDS servers.
 
 Authentication details extracted from:
-  - FileUtils.smali  (X-Moto-Auth-Sign, Secretkey headers)
+  - WaitForResponseTask$InternalResponseReceiver$3.smali
+      getHeaders() → returns EMPTY HashMap (no custom headers for check)
+  - FileUtils.smali  (X-Moto-Auth-Sign, Secretkey headers – upload only)
   - LibConfigs.smali  (APPIID, APPSECERET credentials)
-  - WaitForResponseTask$InternalResponseReceiver$3.smali (header map)
+
+IMPORTANT: The CDS check/state/resources endpoints do NOT use custom
+HTTP headers for authentication.  Volley's JsonObjectRequest sends only
+its default headers (Content-Type: application/json).  The X-Moto-Auth-Sign
+and Secretkey headers are used ONLY for the file-upload endpoint
+(store-ota.svcmot.com).
 """
 
 from __future__ import annotations
@@ -15,23 +22,31 @@ from ota_analyzer.config.settings import OTASettings
 
 @dataclass
 class OTAAuthenticator:
-    """Builds the authentication headers required by Motorola CDS endpoints.
+    """Builds the authentication headers required by Motorola endpoints.
 
-    The CDS API authenticates requests via custom HTTP headers rather than
-    OAuth/Bearer tokens.  The header values are static credentials embedded
-    in the original APK (see *FileUtils.smali* and *LibConfigs.smali*).
+    For CDS check/resources/state requests: no custom headers are needed
+    (verified from smali – getHeaders() returns empty HashMap).
+
+    For file-upload requests: X-Moto-Auth-Sign and Secretkey are required.
     """
 
     settings: OTASettings
 
     # -- public API --------------------------------------------------------
 
-    def get_check_headers(self) -> dict[str, str]:
-        """Headers for check / state / resources endpoints."""
+    def get_check_headers(self, model: str = "", build_id: str = "") -> dict[str, str]:
+        """Headers for check / state / resources endpoints.
+
+        From the HAR capture the real app sends:
+          Content-Type: application/json; charset=utf-8
+          User-Agent: Dalvik/2.1.0 (Linux; U; Android 15; {model} Build/{buildId})
+        """
+        ua = f"Dalvik/2.1.0 (Linux; U; Android 15; {model} Build/{build_id})"
         return {
-            "Content-Type": "application/json",
-            "X-Moto-Auth-Sign": self.settings.upload_auth_sign,
-            "Secretkey": self.settings.upload_secret_key,
+            "Content-Type": "application/json; charset=utf-8",
+            "User-Agent": ua,
+            "Connection": "Keep-Alive",
+            "Accept-Encoding": "gzip",
         }
 
     def get_upload_headers(self, filename: str = "") -> dict[str, str]:

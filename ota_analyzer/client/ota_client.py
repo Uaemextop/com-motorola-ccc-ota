@@ -91,7 +91,10 @@ class OTAClient:
             or request.extra_info.build_id
         )
         url = self._url.check_url(ctx_key)
-        headers = self._auth.get_check_headers()
+        headers = self._auth.get_check_headers(
+            model=request.device_info.model,
+            build_id=request.extra_info.build_id,
+        )
         payload = request.to_dict()
 
         logger.info("POST %s", url)
