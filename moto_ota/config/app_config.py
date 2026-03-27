@@ -11,8 +11,22 @@ from typing import Any
 
 from moto_ota.config.servers import DEFAULT_SERVER, ServerEnv
 
-# Regions the user can pick from
-VALID_REGIONS: list[str] = ["LATAM", "Europe", "Brazil", "Asia", "US", "Global"]
+# Only two real regions exist: Global and China
+VALID_REGIONS: list[str] = ["Global", "China"]
+
+# Servers available per region
+REGION_SERVERS: dict[str, list[str]] = {
+    "Global": [
+        ServerEnv.PRODUCTION_GLOBAL.value,
+        ServerEnv.STAGING.value,
+        ServerEnv.QA.value,
+        ServerEnv.DEV.value,
+    ],
+    "China": [
+        ServerEnv.PRODUCTION_PRC.value,
+        ServerEnv.BLURDEV.value,
+    ],
+}
 
 
 @dataclass
@@ -23,8 +37,8 @@ class AppConfig:
     server: str = DEFAULT_SERVER.value
     """CDS server environment (e.g. ``production-prc``)."""
 
-    region: str = "LATAM"
-    """User region — informational, used as default for carrier picker."""
+    region: str = "Global"
+    """Region — ``Global`` or ``China``.  Determines available servers."""
 
     # ── HTTP ─────────────────────────────────────────────────────────
     user_agent: str = "com.motorola.ccc.ota"
@@ -84,18 +98,18 @@ class AppConfig:
 
 APP_CONFIG_FIELDS: list[dict[str, Any]] = [
     {
-        "key": "server",
-        "label": "Server",
-        "description": "CDS server environment to connect to",
-        "type": "choice",
-        "choices": [e.value for e in ServerEnv],
-    },
-    {
         "key": "region",
         "label": "Region",
-        "description": "Your region (used as default for carrier selection)",
+        "description": "Region — determines which servers are available",
         "type": "choice",
         "choices": VALID_REGIONS,
+    },
+    {
+        "key": "server",
+        "label": "Server",
+        "description": "CDS server environment (filtered by region)",
+        "type": "choice",
+        "choices": [e.value for e in ServerEnv],
     },
     {
         "key": "user_agent",

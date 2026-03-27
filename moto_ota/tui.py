@@ -44,8 +44,8 @@ from rich.table import Table
 from rich.text import Text
 
 from moto_ota import __version__
-from moto_ota.config.app_config import APP_CONFIG_FIELDS
-from moto_ota.config.carriers import CARRIERS, open_carriers
+from moto_ota.config.app_config import APP_CONFIG_FIELDS, REGION_SERVERS
+from moto_ota.config.carriers import CARRIERS, open_carriers, carriers_by_region
 from moto_ota.config.device_config import DEVICE_CONFIG_FIELDS
 from moto_ota.config.manager import (
     app_config_path,
@@ -692,18 +692,20 @@ def _fullscreen_spinner(
 _MAIN_ITEMS = [
     "Check for update",
     "Walk update chain",
+    "Scan carriers",
     "Download updates",
     "List servers",
     "List carriers",
     "Configuration",
     "Exit",
 ]
-_MAIN_ICONS = [">", ">", "#", "*", "*", "@", "x"]
+_MAIN_ICONS = [">", ">", "?", "#", "*", "*", "@", "x"]
 _MAIN_DESCS = [
     "Perform a single OTA check for a\nGUID + carrier combination.\n\nThe server will respond with the\nnext available update (if any).",
     "Enumerate all incremental updates\nfrom a base GUID to the latest\navailable build, following the\notaTargetSha1 chain.",
+    "Test a GUID against all known\nopen carriers to find which ones\nhave updates available.\n\nShows file name and metadata\npreview for each match.",
     "Walk the full update chain and\ndownload every OTA zip to a local\ndirectory, with MD5 verification.",
-    "Show all known CDS server\nendpoints and their current\nstatus.",
+    "Show all known CDS server\nendpoints grouped by region\n(Global / China).",
     "Display the full list of known\ncarrier codes, their names,\nregions, and open/whitelisted\nstatus.",
     "Edit application and device\nconfiguration files.\n\nSettings include server, region,\nHTTP headers, timeouts, GUID,\ncarrier, and device metadata.",
     "Quit the application.",
@@ -1071,11 +1073,22 @@ def _build_config_table(
 
 
 def _pick_server() -> ServerEnv | None:
-    """Full-screen server selector."""
-    items_list = list(SERVERS.items())
+    """Full-screen server selector — filtered by configured region."""
+    cfg_app = load_app_config()
+    region = cfg_app.region
+    allowed = REGION_SERVERS.get(region, [])
+    items_list = [
+        (env, srv) for env, srv in SERVERS.items()
+        if env.value in allowed
+    ]
+    if not items_list:
+        items_list = list(SERVERS.items())
     labels = [f"{srv.label}  ({srv.host})" for _, srv in items_list]
-    descs = [srv.description for _, srv in items_list]
-    pick = _fullscreen_menu(labels, descs, title="Select CDS Server")
+    descs = [
+        f"{srv.description}\n\nRegion: {region}"
+        for _, srv in items_list
+    ]
+    pick = _fullscreen_menu(labels, descs, title=f"Select CDS Server  ({region})")
     if pick is None:
         return None
     return items_list[pick][0]
@@ -1108,21 +1121,16 @@ def _get_guid() -> str | None:
 
 
 def _get_guid_and_carrier() -> tuple[str, str, ServerEnv] | None:
-    """Ask for server, GUID, and carrier -- or use saved config."""
+    """Return (guid, carrier, server_env) -- uses saved config directly
+    if both guid and carrier are set, without asking."""
     cfg_dev = load_device_config()
     cfg_app = load_app_config()
 
-    has_saved = bool(cfg_dev.guid and cfg_dev.carrier)
-    if has_saved:
-        msg = (
-            f"Use saved config?\n\n"
-            f"GUID:    {cfg_dev.guid}\n"
-            f"Carrier: {cfg_dev.carrier}\n"
-            f"Server:  {cfg_app.server}"
-        )
-        if _fullscreen_confirm(msg, default=True):
-            return cfg_dev.guid, cfg_dev.carrier, cfg_app.server_env
+    # If both critical routing fields are configured, use them directly
+    if cfg_dev.guid and cfg_dev.carrier:
+        return cfg_dev.guid, cfg_dev.carrier, cfg_app.server_env
 
+    # Otherwise, prompt for missing values
     env = _pick_server()
     if env is None:
         return None
@@ -1142,13 +1150,16 @@ def _get_guid_and_carrier() -> tuple[str, str, ServerEnv] | None:
 
 def _show_update(resp) -> None:
     if resp.has_update:
+        fname = f"{resp.target_version}_{resp.update_type}.zip"
         body = (
-            f"[bold {SUCCESS}]Source :[/] {resp.source_version}\n"
-            f"[bold {SUCCESS}]Target :[/] {resp.target_version}\n"
-            f"[bold {SUCCESS}]Size   :[/] {resp.size_mb} MB\n"
-            f"[bold {SUCCESS}]Type   :[/] {resp.update_type}\n"
-            f"[bold {SUCCESS}]MD5    :[/] {resp.md5}\n"
-            f"[bold {SUCCESS}]GUID   :[/] {resp.target_guid}"
+            f"[bold {SUCCESS}]Source  :[/] {resp.source_version}\n"
+            f"[bold {SUCCESS}]Target  :[/] {resp.target_version}\n"
+            f"[bold {SUCCESS}]OTA Ver :[/] {resp.target_version}\n"
+            f"[bold {SUCCESS}]Size    :[/] {resp.size_mb} MB\n"
+            f"[bold {SUCCESS}]Type    :[/] {resp.update_type}\n"
+            f"[bold {SUCCESS}]MD5     :[/] {resp.md5}\n"
+            f"[bold {SUCCESS}]GUID    :[/] {resp.target_guid}\n"
+            f"[bold {MUTED}]File    :[/] [{MUTED}]{fname}[/]"
         )
         panel = Panel(body, title="Update Available",
                       border_style=SUCCESS, box=box.ROUNDED)
@@ -1166,41 +1177,82 @@ def _show_update(resp) -> None:
 
 def _show_chain_table(chain) -> None:
     table = Table(
-        title=f"OTA Update Chain -- {len(chain)} step(s)",
+        title=f"OTA Update Chain — {len(chain)} step(s)",
         border_style=ACCENT2, box=box.ROUNDED,
+        title_style=f"bold {ACCENT}",
     )
-    table.add_column("#", style="bold", width=4)
-    table.add_column("Source", style=ACCENT)
-    table.add_column("Target", style=SUCCESS)
+    table.add_column("Install\nOrder", style="bold", width=7, justify="center")
+    table.add_column("Source Version", style=ACCENT)
+    table.add_column("Target Version", style=SUCCESS)
+    table.add_column("OTA Version", style=f"bold {TEXT}")
     table.add_column("Size", justify="right")
     table.add_column("Type")
-    table.add_column("Target GUID", style=MUTED)
+    table.add_column("Filename Preview", style=MUTED)
     for i, u in enumerate(chain, 1):
+        # Build a filename preview like the downloader would create
+        fname = f"step{i:02d}_{u.target_version}_{u.update_type}.zip"
+        # OTA version = target version
+        ota_ver = u.target_version or "—"
         table.add_row(
-            str(i), u.source_version, u.target_version,
-            f"{u.size_mb} MB", u.update_type, u.target_guid[:15],
+            f"#{i}",
+            u.source_version or "—",
+            u.target_version or "—",
+            ota_ver,
+            f"{u.size_mb:.1f} MB",
+            u.update_type or "—",
+            fname,
         )
     total = sum(u.size_mb for u in chain)
-    summary = Text.assemble(
-        ("\n  Base : ", f"bold {TEXT}"),
-        (chain[0].source_version, ACCENT),
-        ("  ->  ", TEXT),
-        ("Latest: ", f"bold {TEXT}"),
-        (chain[-1].target_version, SUCCESS),
-        (f"  ({total:.1f} MB total)", MUTED),
-    )
-    content = Group(table, summary)
+
+    # Summary block
+    summary_parts = [
+        Text.assemble(
+            ("\n  Install order: ", f"bold {TEXT}"),
+            (f"#{1}", f"bold {ACCENT}"),
+            (" → ", MUTED),
+            (f"#{len(chain)}", f"bold {SUCCESS}"),
+            ("  (sequential, each step requires the previous)", MUTED),
+        ),
+        Text.assemble(
+            ("  Base firmware : ", f"bold {TEXT}"),
+            (chain[0].source_version, ACCENT),
+        ),
+        Text.assemble(
+            ("  Final firmware: ", f"bold {TEXT}"),
+            (chain[-1].target_version, SUCCESS),
+        ),
+        Text.assemble(
+            ("  Total size    : ", f"bold {TEXT}"),
+            (f"{total:.1f} MB across {len(chain)} file(s)", MUTED),
+        ),
+    ]
+    content = Group(table, *summary_parts)
     _fullscreen_display(content, title="Update Chain")
 
 
 def _show_servers() -> None:
+    cfg_app = load_app_config()
     table = Table(title="CDS Servers", border_style=ACCENT2, box=box.ROUNDED)
     table.add_column("Name", style="bold")
     table.add_column("Host")
+    table.add_column("Region")
     table.add_column("Description")
     for env, srv in SERVERS.items():
         style = SUCCESS if "production" in env.value else MUTED
-        table.add_row(f"[{style}]{env.value}[/]", srv.host, srv.description)
+        # Determine which region this server belongs to
+        srv_region = "Global"
+        for region, envs in REGION_SERVERS.items():
+            if env.value in envs:
+                srv_region = region
+                break
+        # Highlight current server
+        current = " ←" if env.value == cfg_app.server else ""
+        table.add_row(
+            f"[{style}]{env.value}{current}[/]",
+            srv.host,
+            srv_region,
+            srv.description,
+        )
     _fullscreen_display(table, title="CDS Servers")
 
 
@@ -1214,6 +1266,75 @@ def _show_carriers() -> None:
         st = SUCCESS if c.status == "open" else WARNING
         table.add_row(c.code, c.name, c.region, f"[{st}]{c.status}[/]")
     _fullscreen_display(table, title="Known Carriers")
+
+
+def _scan_carriers(guid: str, env: ServerEnv) -> None:
+    """Test a GUID against all open carriers, showing results."""
+    available = open_carriers()
+    results: list[tuple[str, str, str, str, str]] = []  # carrier, status, target, size, fname
+
+    # Use a simple progress display
+    total = len(available)
+    for idx, carrier in enumerate(available):
+        # Show scanning progress
+        progress_body = (
+            f"[bold {ACCENT}]Scanning carrier {idx + 1}/{total}[/]\n\n"
+            f"Carrier: [{SUCCESS}]{carrier.code}[/] ({carrier.name})\n"
+            f"GUID:    [{MUTED}]{guid}[/]\n\n"
+            f"[{MUTED}]Found {len(results)} match(es) so far...[/]"
+        )
+        progress_panel = Panel(
+            progress_body, box=box.ROUNDED, border_style=ACCENT2,
+        )
+        # We can't easily animate this with Live during blocking HTTP calls,
+        # so we just show the final result.
+        try:
+            with OTAClient(env) as client:
+                resp = client.check(guid, carrier.code)
+            if resp.has_update:
+                fname = f"{resp.target_version}_{carrier.code}.zip"
+                results.append((
+                    carrier.code,
+                    carrier.name,
+                    resp.target_version or "—",
+                    f"{resp.size_mb:.1f} MB",
+                    fname,
+                ))
+        except Exception:
+            pass
+
+    # Show results
+    if not results:
+        _fullscreen_display(
+            Panel(
+                f"[{WARNING}]No carriers returned updates for GUID {guid}.[/]\n\n"
+                f"[{MUTED}]Tested {total} open carriers.\n"
+                f"The OTA package may have expired or the GUID is invalid.[/]",
+                box=box.ROUNDED, border_style=WARNING,
+            ),
+            title="Carrier Scan Results",
+        )
+        return
+
+    table = Table(
+        title=f"Carrier Scan — {len(results)} match(es) for GUID {guid[:15]}",
+        border_style=ACCENT2, box=box.ROUNDED,
+        title_style=f"bold {ACCENT}",
+    )
+    table.add_column("Carrier", style=f"bold {ACCENT}")
+    table.add_column("Name")
+    table.add_column("Target Version", style=SUCCESS)
+    table.add_column("Size", justify="right")
+    table.add_column("Filename Preview", style=MUTED)
+    for code, name, target, size, fname in results:
+        table.add_row(code, name, target, size, fname)
+
+    summary = Text.assemble(
+        (f"\n  Tested {total} open carriers, ", MUTED),
+        (f"{len(results)} returned updates", f"bold {SUCCESS}"),
+    )
+    content = Group(table, summary)
+    _fullscreen_display(content, title="Carrier Scan Results")
 
 
 # =====================================================================
@@ -1314,8 +1435,28 @@ def _run_tui_inner() -> None:
                     title="No Updates",
                 )
 
-        # -- Download updates ------------------------------------------
+        # -- Scan carriers ---------------------------------------------
         elif pick == 2:
+            cfg_app = load_app_config()
+            cfg_dev = load_device_config()
+            if cfg_dev.guid:
+                guid = cfg_dev.guid
+                env = cfg_app.server_env
+            else:
+                env = _pick_server()
+                if env is None:
+                    continue
+                guid = _get_guid()
+                if not guid:
+                    continue
+            with _fullscreen_spinner(
+                f"Scanning {len(open_carriers())} carriers..."
+            ):
+                pass  # spinner shown briefly before scan starts
+            _scan_carriers(guid, env)
+
+        # -- Download updates ------------------------------------------
+        elif pick == 3:
             result = _get_guid_and_carrier()
             if result is None:
                 continue
@@ -1359,17 +1500,17 @@ def _run_tui_inner() -> None:
             )
 
         # -- List servers ----------------------------------------------
-        elif pick == 3:
+        elif pick == 4:
             _show_servers()
 
         # -- List carriers ---------------------------------------------
-        elif pick == 4:
+        elif pick == 5:
             _show_carriers()
 
         # -- Configuration ---------------------------------------------
-        elif pick == 5:
+        elif pick == 6:
             _config_menu()
 
         # -- Exit ------------------------------------------------------
-        elif pick == 6:
+        elif pick == 7:
             break
