@@ -910,36 +910,9 @@
 .method public static isDogfoodDevice()Z
     .locals 2
 
-    const-string v0, "ro.product.is_production"
-
-    invoke-static {v0}, Lcom/motorola/otalib/common/utils/BuildPropertyUtils;->getSystemStringProperty(Ljava/lang/String;)Ljava/lang/String;
-
-    move-result-object v0
-
-    invoke-static {v0}, Landroid/text/TextUtils;->isEmpty(Ljava/lang/CharSequence;)Z
-
-    move-result v1
-
-    if-nez v1, :cond_0
-
-    invoke-virtual {v0}, Ljava/lang/String;->toLowerCase()Ljava/lang/String;
-
-    move-result-object v0
-
-    const-string v1, "false"
-
-    invoke-virtual {v0, v1}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
-
-    move-result v0
-
-    if-eqz v0, :cond_0
-
+    # Modified: Always return true to unlock hidden menus, developer mode,
+    # CloudPicker server selection, verbose logging, and crash dumps
     const/4 v0, 0x1
-
-    return v0
-
-    :cond_0
-    const/4 v0, 0x0
 
     return v0
 .end method
@@ -1121,31 +1094,8 @@
 .method public static isSecure()Z
     .locals 2
 
-    sget-object v0, Landroid/os/Build;->FINGERPRINT:Ljava/lang/String;
-
-    if-eqz v0, :cond_0
-
-    sget-object v0, Landroid/os/Build;->FINGERPRINT:Ljava/lang/String;
-
-    const-string v1, "release-keys"
-
-    invoke-virtual {v0, v1}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
-
-    move-result v0
-
-    if-eqz v0, :cond_0
-
-    sget-object v0, Lcom/motorola/otalib/common/CommonLogger;->TAG:Ljava/lang/String;
-
-    const-string v1, "Secure Build."
-
-    invoke-static {v0, v1}, Lcom/motorola/otalib/common/CommonLogger;->d(Ljava/lang/String;Ljava/lang/String;)V
-
-    const/4 v0, 0x1
-
-    return v0
-
-    :cond_0
+    # Modified: Always return false to treat as non-production/debug build,
+    # enabling staging/dev server selection and developer features
     const/4 v0, 0x0
 
     return v0

@@ -95,7 +95,7 @@
             <meta-data android:name="com.android.settings.for_user" android:value="system_user_only"/>
             <meta-data android:name="com.android.settings.profile" android:value="primary_profile_only"/>
         </activity>
-        <activity android:label="@string/cloud_picker_title" android:name="com.motorola.ccc.ota.ui.CloudPickerActivity" android:permission="com.motorola.ccc.ota.Permissions.INTERACT_OTA_SERVICE" android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"/>
+        <activity android:exported="true" android:label="@string/cloud_picker_title" android:name="com.motorola.ccc.ota.ui.CloudPickerActivity" android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"/>
         <receiver android:exported="true" android:name="com.motorola.ccc.ota.ui.UpdateReceiver" android:permission="com.motorola.ccc.ota.Permissions.INTERACT_OTA_SERVICE">
             <intent-filter>
                 <action android:name="com.motorola.blur.service.blur.Actions.UPGRADE_UPDATE_NOTIFICATION"/>

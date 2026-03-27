@@ -45,9 +45,8 @@
 
     iput-boolean v0, p0, Lcom/motorola/otalib/main/checkUpdate/CheckRequestObj;->isPRCDevice:Z
 
-    const/4 v1, 0x1
-
-    iput-boolean v1, p0, Lcom/motorola/otalib/main/checkUpdate/CheckRequestObj;->isProductionDevice:Z
+    # Modified: Set isProductionDevice to false to allow dev/staging OTAs
+    iput-boolean v0, p0, Lcom/motorola/otalib/main/checkUpdate/CheckRequestObj;->isProductionDevice:Z
 
     iput-boolean v0, p0, Lcom/motorola/otalib/main/checkUpdate/CheckRequestObj;->forceDownload:Z
 
