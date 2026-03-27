@@ -158,7 +158,7 @@ class OTAClient:
                 time.sleep(wait)
 
         raise ConnectionError(
-            f"All {self._settings.max_retries} attempts failed"
+            f"Request failed after {len(self._settings.backoff_values)} attempts"
         ) from last_error
 
     def close(self) -> None:
