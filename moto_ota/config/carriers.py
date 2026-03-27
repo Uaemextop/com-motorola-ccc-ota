@@ -28,15 +28,15 @@ CARRIERS: list[Carrier] = [
     # =====================================================================
     # LATAM  (Mexico, Central & South America)
     # =====================================================================
-    Carrier("amxmx", "América Móvil México", "LATAM", "open"),
-    Carrier("openmx", "Open Market México", "LATAM", "open"),
-    Carrier("retla", "Retail Latin America", "LATAM", "open"),
-    Carrier("amxla", "América Móvil LATAM", "LATAM", "open"),
-    Carrier("amxpe", "América Móvil Perú", "LATAM", "open"),
-    Carrier("tefmx", "Telefónica México", "LATAM", "open"),
-    Carrier("attmx", "AT&T México", "LATAM", "whitelisted"),
-    Carrier("retar", "Retail Argentina", "LATAM", "whitelisted"),
-    Carrier("amxar", "América Móvil Argentina", "LATAM", "whitelisted"),
+    Carrier("amxmx", "América Móvil México", "LATAM"),
+    Carrier("openmx", "Open Market México", "LATAM"),
+    Carrier("retla", "Retail Latin America", "LATAM"),
+    Carrier("amxla", "América Móvil LATAM", "LATAM"),
+    Carrier("amxpe", "América Móvil Perú", "LATAM"),
+    Carrier("tefmx", "Telefónica México", "LATAM"),
+    Carrier("attmx", "AT&T México", "LATAM"),
+    Carrier("retar", "Retail Argentina", "LATAM"),
+    Carrier("amxar", "América Móvil Argentina", "LATAM"),
     Carrier("retmx", "Retail México", "LATAM"),
     Carrier("amxco", "América Móvil Colombia", "LATAM"),
     Carrier("amxcl", "América Móvil Chile", "LATAM"),
@@ -114,10 +114,10 @@ CARRIERS: list[Carrier] = [
     # =====================================================================
     # Brazil
     # =====================================================================
-    Carrier("retbr", "Retail Brazil", "Brazil", "open"),
-    Carrier("amxbr", "América Móvil Brazil", "Brazil", "open"),
-    Carrier("tefbr", "Telefónica Brazil", "Brazil", "open"),
-    Carrier("timbr", "TIM Brazil", "Brazil", "whitelisted"),
+    Carrier("retbr", "Retail Brazil", "Brazil"),
+    Carrier("amxbr", "América Móvil Brazil", "Brazil"),
+    Carrier("tefbr", "Telefónica Brazil", "Brazil"),
+    Carrier("timbr", "TIM Brazil", "Brazil"),
     Carrier("vivobr", "Vivo Brazil", "Brazil"),
     Carrier("oibr", "Oi Brazil", "Brazil"),
     Carrier("nextel", "Nextel Brazil", "Brazil"),
@@ -128,14 +128,14 @@ CARRIERS: list[Carrier] = [
     # =====================================================================
     # Europe
     # =====================================================================
-    Carrier("reteu", "Retail Europe", "Europe", "open"),
-    Carrier("retgb", "Retail UK", "Europe", "open"),
-    Carrier("o2gb", "O2 UK", "Europe", "open"),
-    Carrier("eegb", "EE UK", "Europe", "open"),
-    Carrier("vfeu", "Vodafone Europe", "Europe", "open"),
-    Carrier("3gb", "Three UK", "Europe", "open"),
-    Carrier("demogb", "Demo UK", "Europe", "open"),
-    Carrier("pluspl", "Plus Poland", "Europe", "open"),
+    Carrier("reteu", "Retail Europe", "Europe"),
+    Carrier("retgb", "Retail UK", "Europe"),
+    Carrier("o2gb", "O2 UK", "Europe"),
+    Carrier("eegb", "EE UK", "Europe"),
+    Carrier("vfeu", "Vodafone Europe", "Europe"),
+    Carrier("3gb", "Three UK", "Europe"),
+    Carrier("demogb", "Demo UK", "Europe"),
+    Carrier("pluspl", "Plus Poland", "Europe"),
     Carrier("retde", "Retail Germany", "Europe"),
     Carrier("retfr", "Retail France", "Europe"),
     Carrier("retes", "Retail Spain", "Europe"),
@@ -335,7 +335,7 @@ CARRIERS: list[Carrier] = [
     # =====================================================================
     # Asia
     # =====================================================================
-    Carrier("retin", "Retail India", "Asia", "whitelisted"),
+    Carrier("retin", "Retail India", "Asia"),
     Carrier("retcn", "Retail China", "Asia"),
     Carrier("retapac", "Retail Asia Pacific", "Asia"),
     Carrier("retasia", "Retail Asia", "Asia"),
@@ -502,5 +502,5 @@ def carriers_by_region(region: str) -> list[Carrier]:
 
 
 def all_scannable_carriers() -> list[Carrier]:
-    """Return all carriers suitable for scanning (open + unknown)."""
-    return [c for c in CARRIERS if c.status in ("open", "unknown")]
+    """Return all carriers — status is auto-detected during scan."""
+    return list(CARRIERS)

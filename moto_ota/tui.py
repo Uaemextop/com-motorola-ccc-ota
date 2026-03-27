@@ -1263,13 +1263,17 @@ def _show_carriers() -> None:
 
 
 def _scan_carriers(guid: str, env: ServerEnv) -> None:
-    """Test a GUID against all scannable carriers with auto-detection.
+    """Test a GUID against **all** carriers with auto-detection.
 
-    For each carrier the server is queried.  The result is classified:
+    For each carrier the server is queried.  The result is classified
+    automatically — no pre-defined status is used:
+
       · **open**        — ``proceed=true`` (update returned directly)
       · **whitelisted** — ``proceed=false`` but ``x-cds-content-exists=true``
                           (content exists but needs serial whitelisting)
-      · *skipped*       — ``proceed=false`` and no content (irrelevant carrier)
+      · *no content*    — ``proceed=false`` and no content flag (skipped)
+
+    The scan shows a live progress spinner inside the full-screen TUI.
     """
     available = all_scannable_carriers()
     total = len(available)
@@ -1277,28 +1281,70 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
     # (code, name, region, detected_status, target_ver, size, fname)
     results_open: list[tuple] = []
     results_wl: list[tuple] = []
+    scanned = 0
 
-    with OTAClient(env) as client:
-        for idx, carrier in enumerate(available):
-            try:
-                resp = client.check(guid, carrier.code)
-                if resp.has_update:
-                    fname = f"{resp.target_version}_{carrier.code}.zip"
-                    results_open.append((
-                        carrier.code, carrier.name, carrier.region,
-                        "open",
-                        resp.target_version or "—",
-                        f"{resp.size_mb:.1f} MB",
-                        fname,
-                    ))
-                elif resp.x_cds_content_exists:
-                    results_wl.append((
-                        carrier.code, carrier.name, carrier.region,
-                        "whitelisted",
-                        "—", "—", "—",
-                    ))
-            except Exception:
-                pass
+    def _progress_render() -> RenderableType:
+        w = console.width or 100
+        pct = int(scanned / total * 100) if total else 0
+        bar_done = int(pct * 0.3)
+        bar_todo = 30 - bar_done
+        bar_str = f"[{SUCCESS}]{'█' * bar_done}[/][{MUTED}]{'░' * bar_todo}[/]"
+        body = (
+            f"[bold {ACCENT}]Scanning carriers…[/]\n\n"
+            f"  {bar_str}  {pct}%\n\n"
+            f"  [{TEXT}]{scanned}[/][{MUTED}] / {total} carriers tested[/]\n"
+            f"  [{SUCCESS}]{len(results_open)} open[/]  "
+            f"[{WARNING}]{len(results_wl)} whitelisted[/]"
+        )
+        panel = Panel(
+            Padding(body, (1, 2)),
+            box=box.ROUNDED, border_style=ACCENT2,
+            width=min(55, w - 10),
+        )
+        stars = _star_block(w, 1)
+        lay = Layout()
+        lay.split_column(
+            Layout(name="stars", size=1),
+            Layout(name="content", ratio=1),
+            Layout(name="bottom_stars", size=1),
+        )
+        lay["stars"].update(stars)
+        lay["content"].update(Align.center(panel, vertical="middle"))
+        lay["bottom_stars"].update(_star_block(w, 1))
+        return lay
+
+    with Live(
+        _progress_render(),
+        console=console,
+        screen=True,
+        refresh_per_second=4,
+    ) as live:
+        with OTAClient(env) as client:
+            for idx, carrier in enumerate(available):
+                try:
+                    resp = client.check(guid, carrier.code)
+                    if resp.has_update:
+                        fname = f"{resp.target_version}_{carrier.code}.zip"
+                        results_open.append((
+                            carrier.code, carrier.name, carrier.region,
+                            "open",
+                            resp.target_version or "—",
+                            f"{resp.size_mb:.1f} MB",
+                            fname,
+                        ))
+                    elif resp.x_cds_content_exists:
+                        # Whitelisted — content exists but proceed=false
+                        ver = resp.target_version or "—"
+                        sz = f"{resp.size_mb:.1f} MB" if resp.size_bytes else "—"
+                        results_wl.append((
+                            carrier.code, carrier.name, carrier.region,
+                            "whitelisted",
+                            ver, sz, "—",
+                        ))
+                except Exception:
+                    pass
+                scanned = idx + 1
+                live.update(_progress_render())
 
     found = len(results_open) + len(results_wl)
 
@@ -1324,7 +1370,7 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
     table.add_column("Name")
     table.add_column("Region")
     table.add_column("Status")
-    table.add_column("Target Version", style=SUCCESS)
+    table.add_column("OTA Version", style=SUCCESS)
     table.add_column("Size", justify="right")
     table.add_column("Filename Preview", style=MUTED)
 
@@ -1348,6 +1394,7 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
         (f"{len(results_open)} open", f"bold {SUCCESS}"),
         (", ", MUTED),
         (f"{len(results_wl)} whitelisted", f"bold {WARNING}"),
+        (f", {total - found} no content", MUTED),
     )
     content = Group(table, summary)
     _fullscreen_display(content, title="Carrier Scan Results")
@@ -1507,6 +1554,7 @@ def _run_tui_inner() -> None:
             saved = download_chain(
                 updates, carrier, output_dir,
                 verify=app_cfg.verify_md5,
+                console=console,
             )
             file_list = "\n".join(f"  {p.name}" for p in saved)
             result_body = (
