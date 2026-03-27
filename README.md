@@ -1,5 +1,14 @@
 # moto-ota — Motorola OTA Downloader
 
+```
+ ███╗   ███╗ ██████╗ ████████╗ ██████╗        ██████╗ ████████╗ █████╗
+ ████╗ ████║██╔═══██╗╚══██╔══╝██╔═══██╗      ██╔═══██╗╚══██╔══╝██╔══██╗
+ ██╔████╔██║██║   ██║   ██║   ██║   ██║█████╗██║   ██║   ██║   ███████║
+ ██║╚██╔╝██║██║   ██║   ██║   ██║   ██║╚════╝██║   ██║   ██║   ██╔══██║
+ ██║ ╚═╝ ██║╚██████╔╝   ██║   ╚██████╔╝      ╚██████╔╝   ██║   ██║  ██║
+ ╚═╝     ╚═╝ ╚═════╝    ╚═╝    ╚═════╝        ╚═════╝    ╚═╝   ╚═╝  ╚═╝
+```
+
 Download OTA updates for Motorola devices directly from CDS servers.
 
 Built by reverse-engineering the `com.motorola.ccc.ota` (MotoOta.apk)
@@ -7,13 +16,14 @@ system updater and verified by direct server probing.
 
 ## Features
 
-- **Interactive TUI** -- rich terminal menus for server/carrier selection
-- **CLI mode** -- scriptable commands with `typer`
-- **Download** -- full update chains with progress bars
-- **Chain walk** -- enumerate all delta updates from base to latest
-- **All servers** -- 6 CDS environments (production, staging, QA, dev)
-- **22+ carriers** -- pre-configured carrier codes with region info
-- **Persistent config** -- app & device settings saved to `~/.config/moto-ota/`
+- **Interactive TUI** — keyboard-driven interface inspired by [penumbra](https://github.com/shomykohai/penumbra), with split-pane layouts, ASCII banner, arrow-key navigation and purple/blue colour theme
+- **CLI mode** — scriptable commands with `typer`
+- **Download** — full update chains with rich progress bars
+- **Chain walk** — enumerate all delta updates from base to latest
+- **All servers** — 6 CDS environments (production, staging, QA, dev)
+- **22+ carriers** — pre-configured carrier codes with region info
+- **Persistent config** — two JSON config files (`app.json` + `device.json`) saved at `~/.config/moto-ota/`
+- **Config menus** — interactive settings editor with field descriptions and valid option pickers
 
 ## Installation
 
@@ -29,8 +39,12 @@ pip install .
 moto-ota
 ```
 
-Launches a menu-driven interface to select server, carrier, enter GUID,
-configure settings, and download updates with progress bars.
+Launches a penumbra-style TUI with:
+- **↑/↓** arrow keys to navigate menus
+- **Enter** to select
+- **Esc** to go back
+- Split-pane layout: action list on left, description on right
+- Configuration editor with live field descriptions
 
 ### CLI commands
 

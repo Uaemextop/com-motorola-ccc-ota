@@ -89,6 +89,9 @@ def _read_key() -> str:
                         return "right"
                     if ch3 == "D":
                         return "left"
+                    # Drain any remaining bytes of unrecognised sequence
+                    while select.select([sys.stdin], [], [], 0.02)[0]:
+                        sys.stdin.read(1)
             return "escape"
         if ch in ("\r", "\n"):
             return "enter"
@@ -253,7 +256,7 @@ def _edit_field(field_meta: dict, current_value: Any) -> Any:
     """Show the appropriate editor for a config field.
 
     For ``choice`` and ``carrier`` types a selectable TUI menu is used;
-    for ``bool`` the value is toggled immediately; ``int`` and ``text``
+    for ``bool`` a True/False picker is shown; ``int`` and ``text``
     fall back to ``rich.prompt``.
     """
     ftype = field_meta["type"]
@@ -638,6 +641,11 @@ _MAIN_DESCS = [
 
 def run_tui() -> None:
     """Entry point for the interactive terminal UI."""
+    if not sys.stdin.isatty():
+        console.print("[red]Interactive TUI requires a terminal (TTY).[/]")
+        console.print("Use CLI mode instead: [bold]moto-ota --help[/]")
+        return
+
     fd = sys.stdin.fileno()
     original_attr = termios.tcgetattr(fd)
     try:
@@ -646,7 +654,10 @@ def run_tui() -> None:
         pass
     finally:
         # Always restore the terminal to a sane state.
-        termios.tcsetattr(fd, termios.TCSADRAIN, original_attr)
+        try:
+            termios.tcsetattr(fd, termios.TCSADRAIN, original_attr)
+        except termios.error:
+            pass
         console.print(f"\n[bold {_PURPLE}]Goodbye![/]")
 
 
