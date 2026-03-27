@@ -211,42 +211,163 @@ GUID_C (último)      ──check──→ servidor ──→ {proceed: false}  
 - **No hay forma de obtener builds anteriores al GUID de fábrica** — el
   servidor solo conoce la cadena hacia adelante
 
+### Campos clave del body que afectan la respuesta
+
+Verificado con curl — estos son los campos que **sí importan** y los que no:
+
+| Campo (extraInfo)      | ¿Afecta respuesta? | Notas                                      |
+|------------------------|--------------------|---------------------------------------------|
+| `carrier`              | **SÍ (crítico)**   | El campo más importante. Sin carrier válido no hay update. |
+| `otaSourceSha1`        | SÍ                 | Debe coincidir con el `/key/` de la URL     |
+| `buildId`              | no                 | Servidor lo ignora para routing             |
+| `fingerprint`          | no                 | Servidor lo ignora para routing             |
+| `buildType`/`buildTags`| no                 | user/userdebug/eng todos reciben lo mismo   |
+| `imei`                 | no                 | Puede ser `IMEI_NOT_AVAILABLE`              |
+| `mccmnc`               | no                 | Puede ser `MCCMNC_NOT_AVAILABLE`            |
+| `network`              | no                 | WIFI/CELL/5G todos reciben lo mismo         |
+| `vitalUpdate`          | SÍ                 | `true` → `proceed: false` (bloquea update)  |
+| `contentTimestamp`      | no                 | Servidor lo ignora                          |
+| `clientState`          | no                 | Servidor lo ignora                          |
+| `userLocation`         | no                 | Servidor lo ignora                          |
+
+### Carrier: campo crítico para el routing
+
+El campo `carrier` en `extraInfo` determina si el servidor entrega la
+actualización. Verificado con curl sobre el mismo GUID:
+
+| Carrier       | Resultado       | Región         |
+|---------------|-----------------|----------------|
+| `amxmx`       | ✅ Update       | América Móvil México |
+| `openmx`      | ✅ Update       | Open Market México |
+| `retla`       | ✅ Update       | Retail Latinoamérica |
+| `retbr`       | ✅ Update (cadena diferente!) | Retail Brasil |
+| `reteu`       | ✅ Update       | Retail Europa  |
+| `retgb`       | ✅ Update       | Retail UK      |
+| `o2gb`        | ✅ Update       | O2 UK          |
+| `attmx`       | 🔒 Bloqueado    | AT&T México (x-cds=true, serial no en whitelist) |
+| `retin`       | 🔒 Bloqueado    | Retail India (x-cds=true, serial no en whitelist) |
+| `retar`       | 🔒 Bloqueado    | Retail Argentina |
+| `amxar`       | 🔒 Bloqueado    | América Móvil Argentina |
+| `timbr`       | 🔒 Bloqueado    | TIM Brasil     |
+| `retus`       | ❌ Sin contenido | Retail US      |
+| `vzw`/`tmo`   | ❌ Sin contenido | Verizon/T-Mobile |
+| `(vacío)`     | ❌ Sin contenido | Sin carrier    |
+
+> **Hallazgo clave**: `retbr` produce una **cadena de firmware diferente**
+> (ej: Step 2 va a `VVTA35.51-28-24` en vez de `VVTA35.51-65-5`).
+> Diferentes carriers pueden tener versiones de firmware distintas.
+
+> **Hallazgo**: Cuando `x-cds-content-exists: true` pero `proceed: false`,
+> significa que el servidor **tiene** el firmware para ese carrier, pero el
+> número de serie del dispositivo no está en la whitelist
+> (`serialNoListType: Inclusive`, `deploymentPlanPhase` no es `Open`).
+
 ### Campos clave de la respuesta
 
-| Campo               | Descripción                                    |
-|---------------------|------------------------------------------------|
-| `proceed`           | `true` si hay update disponible                |
-| `otaSourceSha1`     | GUID del build actual (fuente del delta)        |
-| `otaTargetSha1`     | GUID del build destino                          |
-| `displayVersion`    | Nombre del build destino (ej: `VVTA35.51-28-15`)|
-| `size`              | Tamaño del delta en bytes                       |
-| `md5_checksum`      | MD5 del archivo delta                           |
-| `contentResources`  | URLs de descarga (WIFI y CELL)                  |
-| `minVersion`        | Versión mínima requerida                        |
-| `updateType`        | Tipo: `MR` (release) o `SMR` (parche seguridad) |
+| Campo                    | Descripción                                    |
+|--------------------------|------------------------------------------------|
+| `proceed`                | `true` si hay update disponible                |
+| `otaSourceSha1`          | GUID del build actual (fuente del delta)       |
+| `otaTargetSha1`          | GUID del build destino                         |
+| `displayVersion`         | Nombre del build destino (ej: `VVTA35.51-28-15`)|
+| `size`                   | Tamaño del delta en bytes                      |
+| `md5_checksum`           | MD5 del archivo delta                          |
+| `contentResources`       | URLs de descarga (WIFI y CELL)                 |
+| `minVersion`             | Versión mínima requerida                       |
+| `updateType`             | Tipo: `MR` (release) o `SMR` (parche seguridad)|
+| `forced`                 | `true` si la actualización es obligatoria       |
+| `serialNoListType`       | `Inclusive` = whitelist, `NA` = todos           |
+| `deploymentPlanPhase`    | `Open` = disponible para todos                 |
+| `abInstallType`          | `streamingOnAb` para A/B OTA                   |
+| `streamingData`          | Metadata del payload.bin (hash, offset, size)  |
+
+### Headers de respuesta importantes
+
+| Header                   | Descripción                                    |
+|--------------------------|------------------------------------------------|
+| `x-cds-content-exists`   | `true`/`false` — indica si hay contenido para el GUID+carrier |
+| `cache-control`          | `no-cache, no-store, must-revalidate`          |
+| `x-cloud-trace-context`  | ID de traza de Google App Engine               |
+
+### CDNs de descarga
+
+Las URLs de descarga usan dos CDNs diferentes:
+
+| CDN                      | Patrón de URL                                  |
+|--------------------------|------------------------------------------------|
+| DLMGR (Motorola)         | `dlmgr.gtm.svcmot.com/dl/dlws/1/download/...` |
+| EdgeCast (Verizon)       | `dlmgredg-vz.gtm.svcmot.com/{packageID}`      |
+
+- Cada update tiene 2 URLs: una con tag `WIFI` y otra con tag `CELL`
+- Las URLs expiran (`urlTtlSeconds: 600` = 10 minutos)
+- Los archivos son ZIP conteniendo `payload.bin` (Chrome OS Update format)
+- Soportan HEAD y Range requests
+
+### triggeredBy: valores válidos
+
+Verificado con curl — solo estos 3 valores son aceptados por el servidor:
+
+| Valor       | Resultado | Uso                                |
+|-------------|-----------|-------------------------------------|
+| `user`      | ✅ 200    | Verificación manual del usuario     |
+| `polling`   | ✅ 200    | Verificación periódica automática   |
+| `setup`     | ✅ 200    | Verificación durante setup inicial  |
+| `pairing`   | ❌ 400    | Rechazado por el servidor           |
+| `system`    | ❌ 400    | Rechazado por el servidor           |
+| `(vacío)`   | ❌ 400    | Rechazado por el servidor           |
+
+### idType: valores aceptados
+
+El servidor acepta cualquier valor de `idType` (`serialNumber`, `IMEI`,
+`MAC`, vacío) — todos retornan la misma respuesta. El smali hardcodea
+`serialNumber`.
+
+### Contextos URL (ctx/XXX)
+
+Solo `ota` tiene paquetes publicados. Los otros contextos retornan
+`proceed: false`:
+
+| Contexto     | Resultado      | Uso esperado                     |
+|--------------|----------------|-----------------------------------|
+| `ota`        | ✅ Updates     | Actualización del sistema         |
+| `fota`       | ❌ Sin updates | Firmware over-the-air (carrier)   |
+| `modem`      | ❌ Sin updates | Firmware del modem/radio          |
+| `firmware`   | ❌ Sin updates | (no estándar)                     |
+| `bootloader` | ❌ Sin updates | (no estándar)                     |
 
 ## Servidores CDS
 
-| Región | Entorno      | Servidor                           |
-|--------|--------------|------------------------------------|
-| Global | Producción   | `moto-cds.appspot.com`             |
-| Global | Staging      | `moto-cds-staging.appspot.com`     |
-| Global | QA           | `moto-cds-qa.appspot.com`          |
-| Global | Desarrollo   | `moto-cds-dev.appspot.com`         |
-| PRC    | Producción   | `moto-cds.svcmot.cn`              |
-| PRC    | Desarrollo   | `ota-cn-sdc.blurdev.com`           |
+| Región | Entorno      | Servidor                           | Estado          |
+|--------|--------------|------------------------------------|-----------------|
+| Global | Producción   | `moto-cds.appspot.com`             | ✅ Funciona     |
+| Global | Staging      | `moto-cds-staging.appspot.com`     | Sin OTA paquetes|
+| Global | QA           | `moto-cds-qa.appspot.com`          | Timeout/503     |
+| Global | Desarrollo   | `moto-cds-dev.appspot.com`         | Timeout         |
+| PRC    | Producción   | `moto-cds.svcmot.cn`              | ✅ Funciona     |
+| PRC    | Desarrollo   | `ota-cn-sdc.blurdev.com`           | Sin OTA paquetes|
 
 > **Nota:** `moto-cds.svcmot.cn` no es exclusivo de China — funciona para
 > dispositivos de cualquier región. Ambos servidores de producción retornan
-> los mismos updates.
+> los mismos updates con las mismas cadenas de firmware.
+
+> **Nota:** `ota-cn-sdc.blurdev.com` en realidad apunta a la misma
+> instancia que staging (`appId=moto-cds-staging`).
 
 ## Endpoints API
 
-| Operación          | Ruta                         |
-|--------------------|------------------------------|
-| Verificar update   | `cds/upgrade/1/check`        |
-| Obtener recursos   | `cds/upgrade/1/resources`    |
-| Reportar estado    | `cds/upgrade/1/state`        |
+| Operación          | Método | Ruta                                           | Estado    |
+|--------------------|--------|-------------------------------------------------|-----------|
+| Verificar update   | POST   | `cds/upgrade/1/check/ctx/{ctx}/key/{guid}`     | ✅ Real   |
+| Obtener recursos   | POST   | `cds/upgrade/1/resources/t/{tid}/ctx/{c}/key/{g}`| ✅ Real |
+| Reportar estado    | POST   | `cds/upgrade/1/state/t/{tid}/s/{st}/ctx/{c}/key/{g}`| ✅ Real |
+| Info del servidor  | GET    | `cds/upgrade/1/versions`                        | ✅ Real   |
+| Check API v2       | POST   | `cds/upgrade/2/check/ctx/{ctx}/key/{guid}`     | ✅ Mismo que v1|
+| Cualquier otra ruta| GET/POST| `cds/upgrade/1/{otro}/...`                     | 200 catch-all → `UPGRADE_RESOURCE_NOT_FOUND` |
+
+> **Nota:** El endpoint `/check` es POST-only (GET retorna 405).
+> POST con body vacío retorna 400: `"The id/imei is missing from the request"`.
+> Las rutas desconocidas retornan 200 con `UPGRADE_RESOURCE_NOT_FOUND`
+> (catch-all de Google App Engine), no 404.
 
 Patrón de URL completo:
 ```
@@ -282,3 +403,7 @@ Los algoritmos y estructuras de datos fueron extraídos del bytecode smali:
 - `BuildPropReader.smali` – Recolección de información del dispositivo
 - `WebServiceThread.smali` – Lógica de reintentos y back-off
 - `WaitForResponseTask$InternalResponseReceiver$3.smali` – Headers HTTP (vacíos)
+- `PublicUtilityMethods$TRIGGER_BY.smali` – Valores válidos de triggeredBy
+- `CDSUtils.smali` – Constantes de idType y endpoints
+- `CloudPickerActivity.smali` – Selector de servidores (dogfood only)
+- `BuildPropertyUtils.smali` – isDogfoodDevice() / isSecure()
