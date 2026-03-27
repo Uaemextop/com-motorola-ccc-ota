@@ -403,6 +403,168 @@ Solo se necesitan los headers estándar:
 Los headers `X-Moto-Auth-Sign` y `Secretkey` solo se usan para el endpoint
 de upload de archivos (`store-ota.svcmot.com`).
 
+## Depuración CDS para obtener actualizaciones de Carrier
+
+### Cómo funciona el routing por carrier
+
+El servidor CDS usa el campo `carrier` en `extraInfo` como **parámetro
+principal de routing** para decidir qué firmware entregar. El flujo es:
+
+```
+Request: POST /cds/upgrade/1/check/ctx/ota/key/{GUID}
+  Body.extraInfo.carrier = "amxmx"  ← determina qué firmware se entrega
+
+Server evalúa:
+  1. ¿Existe contenido para este GUID+carrier?  → x-cds-content-exists header
+  2. ¿El serial está en la whitelist?            → serialNoListType: Inclusive
+  3. ¿El deployment está abierto?                → deploymentPlanPhase: Open
+  → Si todo OK: proceed=true + content con URLs de descarga
+  → Si existe pero serial no está: proceed=false + x-cds-content-exists=true
+  → Si no existe: proceed=false + x-cds-content-exists=false
+```
+
+### Hallazgos de la depuración con curl
+
+Resultado de pruebas exhaustivas contra `moto-cds.svcmot.cn`:
+
+**1. El campo `carrier` es el único campo del body que afecta el routing:**
+
+```bash
+# Con carrier válido → ✅ update disponible
+curl -s -X POST 'https://moto-cds.svcmot.cn/cds/upgrade/1/check/ctx/ota/key/{GUID}' \
+  -H 'Content-Type: application/json; charset=utf-8' \
+  -d '{"extraInfo":{"carrier":"amxmx","otaSourceSha1":"{GUID}",...},...}'
+# → proceed: true, content: {displayVersion, size, packageID, urls...}
+
+# Sin carrier o carrier inválido → ❌ sin update
+curl -s -X POST '...' -d '{"extraInfo":{"carrier":"","otaSourceSha1":"{GUID}",...},...}'
+# → proceed: false, x-cds-content-exists: false
+```
+
+**2. Campos que NO afectan el routing** (probados individualmente):
+- `buildType` (user/userdebug/eng)
+- `fingerprint` (cualquier valor)
+- `imei` / `mccmnc` (cualquier valor)
+- `buildTags` (release-keys/dev-keys)
+- `osVersion`, `contentTimestamp`
+- `triggeredBy` (user/polling/setup — todos aceptados)
+
+**3. Campos que SÍ bloquean updates:**
+- `vitalUpdate: true` → servidor retorna `proceed: false` siempre
+- `carrier: ""` → sin carrier no hay routing posible
+
+**4. Header de respuesta clave:**
+- `x-cds-content-exists: true` → el servidor TIENE firmware pero no lo entrega
+  (serial no está en whitelist o deployment no es "Open")
+- `x-cds-content-exists: false` → no hay firmware para ese GUID+carrier
+
+**5. Contextos disponibles** (probados en URL `/ctx/{ctx}/key/{GUID}`):
+- `ctx=ota` → único contexto con paquetes publicados
+- `ctx=fota` → siempre `proceed: false` (firmware-over-the-air de carrier)
+- `ctx=modem` → siempre `proceed: false` (firmware de modem/radio)
+
+**6. Expiración de OTA packages:**
+Los packages OTA se retiran del servidor después de un tiempo. El GUID
+`0d5cc74421f2e8a` devolvía updates hasta marzo 2026 pero fue retirado.
+El servidor responde `proceed: false, x-cds-content-exists: false` cuando
+el GUID ya no tiene packages activos. No existe endpoint para consultar
+packages históricos.
+
+### Cómo obtener actualizaciones de un carrier específico
+
+```bash
+# 1. Obtener GUID actual del dispositivo:
+#    adb shell getprop ro.mot.build.guid  →  "0d5cc74421f2e8a"
+
+# 2. Consultar con el carrier deseado:
+python -m ota_analyzer check-update \
+    --model "moto g05" \
+    --fingerprint "motorola/lamul_g/lamul:15/VVTA35.51-18-6/1e9f09:user/release-keys" \
+    --guid "0d5cc74421f2e8a" \
+    --serial "ZY32LNRW97" \
+    --carrier "demogb" \
+    --hardware "mt6768" \
+    --region prc
+
+# 3. Enumerar cadena completa del carrier:
+python -m ota_analyzer enumerate-updates \
+    --model "moto g05" \
+    --fingerprint "motorola/lamul_g/lamul:15/VVTA35.51-18-6/1e9f09:user/release-keys" \
+    --guid "0d5cc74421f2e8a" \
+    --serial "ZY32LNRW97" \
+    --carrier "demogb" \
+    --hardware "mt6768" \
+    --region prc \
+    --output cadena_demogb.json
+
+# 4. Equivalente curl directo:
+curl -s -X POST \
+  'https://moto-cds.svcmot.cn/cds/upgrade/1/check/ctx/ota/key/0d5cc74421f2e8a' \
+  -H 'Content-Type: application/json; charset=utf-8' \
+  -H 'User-Agent: Dalvik/2.1.0 (Linux; U; Android 15; moto g05 Build/VVTA35.51-18-6)' \
+  -d '{
+    "id": "ZY32LNRW97",
+    "contentTimestamp": 0,
+    "deviceInfo": {
+      "manufacturer": "motorola", "hardware": "mt6768",
+      "brand": "motorola", "model": "moto g05", "product": "",
+      "os": "Linux:null:null", "osVersion": "15",
+      "country": "", "region": "US", "language": "es", "userLanguage": "es_US"
+    },
+    "extraInfo": {
+      "clientIdentity": "motorola-ota-client-app",
+      "carrier": "demogb",
+      "brand": "motorola", "model": "moto g05",
+      "fingerprint": "motorola/lamul_g/lamul:15/VVTA35.51-18-6/1e9f09:user/release-keys",
+      "buildDevice": "lamul", "buildId": "VVTA35.51-18-6",
+      "otaSourceSha1": "0d5cc74421f2e8a",
+      "network": "WIFI", "apkVersion": 3500094,
+      "imei": "359488357396203", "mccmnc": "334020",
+      "ro.virtual_ab.enabled": true
+    },
+    "identityInfo": {"serialNumber": "ZY32LNRW97"},
+    "triggeredBy": "user",
+    "idType": "serialNumber"
+  }' | python3 -m json.tool
+```
+
+### Respuesta del servidor cuando no hay actualizaciones
+
+```json
+{
+  "proceed": false,
+  "context": "ota",
+  "contextKey": "0d5cc74421f2e8a",
+  "content": null,
+  "contentTimestamp": 0,
+  "contentResources": null,
+  "trackingId": null,
+  "reportingTags": null,
+  "pollAfterSeconds": 172800,
+  "smartUpdateBitmap": 7,
+  "uploadFailureLogs": false
+}
+```
+
+Headers de respuesta:
+```
+x-cds-content-exists: false    ← no hay contenido para este GUID+carrier
+cache-control: no-cache, no-store, must-revalidate
+x-cloud-trace-context: {trace-id}
+Server: nginx/1.14.1           ← proxy nginx frente a GAE
+```
+
+### Limitaciones descubiertas
+
+1. **No hay endpoint para listar carriers disponibles** — hay que probarlos uno a uno
+2. **No hay endpoint para listar GUIDs activos** — solo se puede consultar un GUID conocido
+3. **Los packages OTA expiran** — el servidor los retira después de un tiempo
+4. **No hay API para firmware completo** — solo deltas OTA incrementales
+5. **`ctx=fota` y `ctx=modem` no tienen packages** — solo `ctx=ota` funciona
+6. **Staging/Dev/QA no tienen packages** — solo producción (`moto-cds.svcmot.cn` y `moto-cds.appspot.com`)
+7. **El resources endpoint necesita un trackingId real** — sin él devuelve `UPGRADE_RESOURCE_NOT_FOUND`
+8. **API v2 retorna exactamente lo mismo que v1** — no hay endpoints ocultos
+
 ## Fuentes del análisis
 
 Los algoritmos y estructuras de datos fueron extraídos del bytecode smali:
