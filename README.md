@@ -588,6 +588,269 @@ Fuentes conocidas:
 6. **API v2 retorna exactamente lo mismo que v1** — no hay endpoints ocultos
 7. **URLs expiran rápido (600s)** — hay que generar nuevas para cada descarga
 
+## Análisis del device dump (motorola\_lamu\_dump)
+
+Análisis exhaustivo del dump completo del dispositivo moto g15 (lamu\_g),
+incluyendo decompilación con apktool de `framework.jar` (32,848 smali),
+`services.jar` (16,760 smali), `framework-res.apk` (5,964 XML) y
+`MotoOta.apk` (10,906 smali del repo); análisis con Capstone de binarios
+ELF (`update_engine`, `update_verifier`, `otapreopt`) y librerías `.so`;
+y extracción recursiva de strings de todos los archivos de
+`system/`, `vendor/`, `product/`, `system_ext/`.
+
+### GUID descubierto en el dump
+
+```
+ro.mot.build.guid=2d94974667acf1d   (build VVTA35.51-137, moto g15 lamu_g)
+```
+
+Este GUID está **activo** en ambos servidores CDS y devuelve updates para
+**todos** los carriers probados (27/27). La cadena desde este GUID:
+
+```
+Step 1: VVTA35.51-137   → VVTAS35.51-137-2     (22.2 MB, SMR)
+Step 2: VVTAS35.51-137-2 → VVTAS35.51-137-2-1  (15.2 MB, SMR)
+```
+
+### Todos los GUIDs recopilados (cadena completa moto g05/g15)
+
+| GUID | Build | Tamaño delta |
+|------|-------|-------------|
+| `0d5cc74421f2e8a` | VVTA35.51-18-6 (base) | — |
+| `23d670d5d06f351` | VVTA35.51-28-15 | 105.9 MB |
+| `a363e2a67728d8a` | VVTA35.51-65-5 | 338.5 MB |
+| `190325d96009ac5` | VVTA35.51-100 | 134.1 MB |
+| `96398c9adf48ac1` | VVTAS35.51-100-3 | 19.0 MB |
+| `871158e11e40ca6` | VVTA35.51-127 | 916.7 MB |
+| `2d94974667acf1d` | VVTA35.51-137 | 70.5 MB |
+| `39c2283287d0945` | VVTAS35.51-137-2 | 22.2 MB |
+| `2a30b040bddb962` | VVTAS35.51-137-2-1 | 15.2 MB (último) |
+
+### Endpoints descubiertos en binarios
+
+| Endpoint | Archivo fuente | Propósito |
+|----------|---------------|-----------|
+| `https://store-ota.svcmot.com/` | FileUtils.smali | Upload de logs update\_engine (no descarga) |
+| `https://d2xbblc68nqw6k.cloudfront.net/` | PublicUtilityMethods.smali | CDN para MFP (pre-install notes) |
+| `http://www.motorola.com/support/%s/ReleaseNotes.html` | Configs.smali | Notas de release por modelo |
+| `moto-cds.svcmot.cn` | BotaSettings/Configs/CheckUpdateHandler | Servidor CDS producción (PRC route) |
+| `moto-cds.appspot.com` | BotaSettings/Configs/CloudPickerActivity | Servidor CDS producción (global) |
+| `moto-cds-staging.appspot.com` | Configs/CloudPickerActivity | Staging (sin packages) |
+| `moto-cds-qa.appspot.com` | CloudPickerActivity | QA (sin packages) |
+| `moto-cds-dev.appspot.com` | CloudPickerActivity | Dev (sin packages) |
+
+### Headers HTTP extraídos del smali
+
+| Header | Archivo | Dirección | Uso |
+|--------|---------|-----------|-----|
+| `Content-Type` | FileUploadService.smali | Request | `application/json` para check, multipart para upload |
+| `X-Moto-Auth-Sign` | FileUploadService.smali | Request | Firma para upload de logs a store-ota |
+| `x-moto-accept-verification-methods` | WebServiceThread.smali | Request | Métodos de verificación aceptados |
+| `x-moto-backoff` | WebServiceThread.smali | Response | Backoff del servidor |
+| `Accept-Encoding` | AdvancedFileDownloader.smali | Request | Compresión para descargas |
+| `Content-Length` | AdvancedFileDownloader.smali | Response | Tamaño del archivo |
+| `Content-Range` | AdvancedFileDownloader.smali | Response | Rango parcial (resume) |
+| `Transfer-Encoding` | AdvancedFileDownloader.smali | Response | Chunked transfer |
+| `ETag` | AdvancedFileDownloader.smali | Response | Cache validation |
+| `x-cds-content-exists` | (HTTP response) | Response | `true`/`false` indica si existe contenido |
+
+### Body keys del request (355 extraídos del smali)
+
+Keys principales para el JSON del request `/cds/upgrade/1/check`:
+
+```json
+{
+  "id": "...",                     // serial o "SERIAL_NUMBER_NOT_AVAILABLE"
+  "contentTimestamp": 0,
+  "idType": "serialNumber",
+  "triggeredBy": "user",           // user|polling|setup|pairing
+  "deviceInfo": {
+    "manufacturer": "motorola",
+    "hardware": "...",
+    "brand": "motorola",
+    "model": "...",
+    "product": "",                  // DEBE ser vacío
+    "os": "Linux:null:null",
+    "osVersion": "15",
+    "country": "US",
+    "region": "US",
+    "language": "es",
+    "userLanguage": "es_US"
+  },
+  "extraInfo": {
+    "carrier": "amxmx",            // CRÍTICO — determina firmware
+    "otaSourceSha1": "...",         // GUID del build actual
+    "vitalUpdate": false,           // true BLOQUEA updates
+    "clientIdentity": "motorola-ota-client-app",
+    "brand": "motorola",
+    "model": "...",
+    "fingerprint": "...",           // ignorado por server
+    "buildDevice": "...",
+    "buildId": "...",
+    "buildDisplayId": "...",
+    "buildTags": "release-keys",
+    "buildType": "user",
+    "buildIncrementalVersion": "...",
+    "releaseVersion": "15",
+    "network": "WIFI",
+    "apkVersion": 3500094,
+    "imei": "...",                  // ignorado
+    "mccmnc": "...",                // ignorado
+    "bootloaderStatus": "not-applicable",
+    "deviceRooted": "false",
+    "deviceChipset": "Others",
+    "userLocation": "Non-CN",
+    "provisionedTime": 0,
+    "additionalInfo": "",
+    "is4GBRam": false,
+    "incrementalVersion": 0,
+    "radioVersion": "",
+    "bootloaderVersion": "",
+    "securityVersion": ""
+  },
+  "identityInfo": {
+    "serialNumber": "..."           // ignorado para builds abiertos
+  }
+}
+```
+
+**Hallazgo clave:** El server solo necesita `carrier`, `otaSourceSha1`,
+`vitalUpdate=false` y `triggeredBy=user`. Todos los demás campos son ignorados.
+
+### Body keys de la response
+
+```json
+{
+  "proceed": true,
+  "context": "ota",
+  "contextKey": "...",              // GUID consultado
+  "content": {
+    "displayVersion": "...",
+    "sourceDisplayVersion": "...",
+    "size": "...",
+    "packageID": "...",
+    "md5_checksum": "...",
+    "otaTargetSha1": "...",         // GUID del siguiente build
+    "updateType": "MR|SMR",
+    "minVersion": "...",
+    "flavour": "...",
+    "preInstallNotes": "...",
+    "postInstallNotes": "...",
+    "releaseNotes": "..."
+  },
+  "contentTimestamp": 0,
+  "contentResources": [
+    {
+      "url": "https://dlmgr.gtm.svcmot.com/...",
+      "tags": ["WIFI", "DLMGR_AGENT"],
+      "urlTtlSeconds": 600
+    }
+  ],
+  "trackingId": "...",
+  "reportingTags": "...",
+  "pollAfterSeconds": 172800,
+  "smartUpdateBitmap": 7,
+  "uploadFailureLogs": false
+}
+```
+
+### Análisis de framework.jar (32,848 smali)
+
+Decompilado con apktool. Hallazgos relevantes:
+
+- **RecoverySystem.smali**: Verifica OTA con certificados de `/system/etc/security/otacerts.zip`.
+  Usa `X.509` para validación. No contiene URLs de servidor.
+- **UpdateEngine.smali**: Busca `android.os.UpdateEngineService` para aplicar payloads A/B.
+  No contiene URLs ni endpoints de descarga propios.
+- **IUpdateEngine$Stub**: Expone `applyPayload` y `applyPayloadFd` — métodos para aplicar OTA.
+- **Carrier.smali**: Lee `ro.carrier` — propiedad del carrier del dispositivo.
+- **GeneralFeature.smali**: Lee `ro.moto.general.feature.ota` para determinar si OTA está habilitado.
+- **Motorola event-api** (v1.4.1-SNAPSHOT): Usado para checkin de eventos, no para OTA.
+
+**No se encontraron URLs, endpoints ni servidores OTA adicionales en framework.jar.**
+
+### Análisis de services.jar (16,760 smali)
+
+Decompilado con apktool. Hallazgos relevantes:
+
+- **AbUpdateInstaller.smali**: Aplica OTA A/B buscando `payload.bin` y
+  `payload_properties.txt` dentro del ZIP. Copia el ZIP a `/ota_package`.
+- **UpdateInstaller.smali**: Copia el archivo update a `/ota_package/update.zip`.
+- **SystemUpdateManagerService.smali**: Persiste estado en `system-update-info.xml`.
+  Solo maneja estado local, no hace requests HTTP.
+- **FotaProtectionAdapter.smali** (Motorola enterprise): Controla si FOTA está
+  protegido via HAL `IFdrControl`. Solo lectura/escritura de estado.
+- **BootReceiver.smali**: Referencia `com.google.android.systemupdater.SystemUpdateReceiver`
+  — el receiver de GMS para system updates.
+
+**No se encontraron URLs, endpoints ni servidores OTA adicionales en services.jar.**
+
+### Análisis de framework-res.apk (5,964 XML)
+
+Decompilado con apktool. Hallazgos relevantes:
+
+- `AndroidManifest.xml`: Define permisos `NOTIFY_PENDING_SYSTEM_UPDATE`,
+  `READ_SYSTEM_UPDATE_INFO`, `MANAGE_DEVICE_POLICY_SYSTEM_UPDATES`,
+  `UPGRADE_RUNTIME_PERMISSIONS`. Broadcast protegidos para carrier config.
+- Acción `android.telephony.euicc.action.OTA_STATUS_CHANGED` para eSIM OTA.
+- `config_carrierDpcPackage`: Placeholder para carrier DPC.
+
+**No se encontraron URLs, endpoints ni servidores OTA adicionales en framework-res.apk.**
+
+### Análisis de binarios con Capstone
+
+| Binario | Tamaño | Hallazgos OTA |
+|---------|--------|--------------|
+| `update_engine` | 3.2 MB | Usa libcurl para descargas HTTP. Paths: `ro.ota.allow_downgrade`. Errors: `ErrorCode::kDownloadOperationExecutionError` |
+| `update_verifier` | 151 KB | Lee `/data/ota_package/care_map`. Prop: `ota.warm_reset` |
+| `otapreopt` | 232 KB | Props: `pm.dexopt.abota_dex2oat.cpu-set`, `pm.dexopt.abota_dex2oat.threads` |
+| `otapreopt_chroot` | 167 KB | Ejecuta `/system/bin/otapreopt` en chroot |
+| `motoproxyd` | 35 KB | Proxy server para PAC. No OTA. |
+
+**Ningún binario contiene URLs o endpoints CDS adicionales.** `update_engine`
+usa curl pero las URLs vienen del caller (MotoOta.apk), no están hardcoded.
+
+### Análisis de archivos .rc init
+
+Archivos con configuración OTA:
+
+| Archivo | Contenido relevante |
+|---------|-------------------|
+| `init.moto.ota.rc` | `mkdir /data/misc_ne 0770 system cache` |
+| `update_engine.rc` | `service update_engine /system/bin/update_engine --logtostderr` |
+| `update_verifier.rc` | `service update_verifier /system/bin/update_verifier` |
+| `otapreopt.rc` | `exec - root -- /system/bin/otapreopt_slot` |
+| `hw/init.rc` | `mkdir /metadata/ota`, `mkdir /data/ota_package`, `mkdir /data/misc/update_engine` |
+| `hw/init.mt6768.rc` | `import /FWUpgradeInit.rc` — firmware upgrade init |
+
+**No se encontraron URLs ni configuraciones de servidor en los .rc files.**
+
+### Resultado del brute force
+
+| Prueba | Resultado |
+|--------|-----------|
+| GUID adyacente (±50) | 0 nuevos GUIDs encontrados |
+| SHA1 de build strings | 0 coincidencias |
+| Campos body no documentados | Server rechaza (400) campos top-level desconocidos |
+| Campos extraInfo inventados | Server los ignora — no afectan resultado |
+| URL contexts alternativos | Solo `ctx=ota` funciona; fota/modem/firmware/system/recovery = sin packages |
+| triggeredBy alternativo | Solo `"user"` devuelve updates en producción |
+| Carriers whitelisted | attmx/retin/retar/amxar ahora devuelven updates para GUID 2d94974667acf1d |
+
+### Conclusión del análisis
+
+**Toda la lógica de OTA está en MotoOta.apk** (ya decompilado en este repo).
+`framework.jar`, `services.jar` y `framework-res.apk` solo contienen las APIs
+de Android estándar (`UpdateEngine`, `RecoverySystem`, `PackageInstaller`) que
+**reciben** las instrucciones de MotoOta.apk. No contienen URLs, endpoints,
+servidores ni lógica de routing de OTA adicionales.
+
+Los únicos servidores que manejan OTA son los ya documentados:
+- `moto-cds.svcmot.cn` (producción, ruta PRC)
+- `moto-cds.appspot.com` (producción, ruta global)
+- `store-ota.svcmot.com` (solo upload de logs)
+- `d2xbblc68nqw6k.cloudfront.net` (CDN de notas pre-install)
+
 ## Fuentes del análisis
 
 Los algoritmos y estructuras de datos fueron extraídos del bytecode smali:

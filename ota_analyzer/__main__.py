@@ -200,6 +200,48 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Server environment",
     )
 
+    # -- download-ota ------------------------------------------------------
+    dl = sub.add_parser(
+        "download-ota",
+        help="Download OTA packages for the full update chain",
+    )
+    dl.add_argument("--guid", required=True, help="Starting GUID (ro.mot.build.guid)")
+    dl.add_argument("--carrier", required=True, help="Carrier name (e.g. amxmx, retgb)")
+    dl.add_argument("--output-dir", default=".", help="Directory to save OTA files")
+    dl.add_argument("--max-steps", type=int, default=20, help="Maximum chain steps")
+    dl.add_argument("--delay", type=float, default=1.0, help="Delay between requests (seconds)")
+    dl.add_argument("--verify-only", action="store_true", help="Only verify URLs, don't download")
+    dl.add_argument(
+        "--region",
+        choices=["global", "prc"],
+        default="prc",
+        help="Server region",
+    )
+    dl.add_argument(
+        "--env",
+        choices=["production", "staging", "qa", "development"],
+        default="production",
+        help="Server environment",
+    )
+
+    # -- brute-force -------------------------------------------------------
+    bf = sub.add_parser(
+        "brute-force",
+        help="Brute-force discover GUIDs and test API parameters",
+    )
+    bf.add_argument("--guid", default="", help="Base GUID to scan around")
+    bf.add_argument("--carrier", default="reteu", help="Carrier to test with")
+    bf.add_argument("--scan-range", type=int, default=50, help="Scan ±N around base GUID")
+    bf.add_argument("--scan-carriers", action="store_true", help="Test all known carriers")
+    bf.add_argument("--scan-contexts", action="store_true", help="Test URL contexts (ota/fota/modem/...)")
+    bf.add_argument("--delay", type=float, default=0.2, help="Delay between requests")
+    bf.add_argument(
+        "--region",
+        choices=["global", "prc"],
+        default="prc",
+        help="Server region",
+    )
+
     # -- common options ----------------------------------------------------
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable debug logging"
@@ -819,6 +861,239 @@ def _cmd_debug_server(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_download_ota(args: argparse.Namespace) -> int:
+    """Download OTA packages by walking the update chain."""
+    import requests as req
+    from pathlib import Path
+
+    host = "moto-cds.svcmot.cn" if args.region == "prc" else "moto-cds.appspot.com"
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    cur_guid = args.guid
+    chain = []
+
+    print(f"{'=' * 72}")
+    print(f"  OTA Download — carrier={args.carrier} server={host}")
+    print(f"  Starting GUID: {cur_guid}")
+    print(f"  Output: {out_dir.resolve()}")
+    print(f"{'=' * 72}")
+
+    for step in range(1, args.max_steps + 1):
+        url = f"https://{host}/cds/upgrade/1/check/ctx/ota/key/{cur_guid}"
+        payload = {
+            "id": "SERIAL_NUMBER_NOT_AVAILABLE",
+            "deviceInfo": {"country": "US", "region": "US"},
+            "extraInfo": {
+                "carrier": args.carrier,
+                "vitalUpdate": False,
+                "otaSourceSha1": cur_guid,
+            },
+            "triggeredBy": "user",
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "com.motorola.ccc.ota",
+        }
+
+        try:
+            resp = req.post(url, json=payload, headers=headers, timeout=30)
+            data = resp.json()
+        except Exception as exc:
+            print(f"\n  Step {step}: ERROR — {exc}")
+            break
+
+        if not data.get("proceed"):
+            cds = resp.headers.get("x-cds-content-exists", "?")
+            print(f"\n  Step {step}: END (proceed=false, x-cds-content-exists={cds})")
+            break
+
+        content = data["content"]
+        ver = content.get("displayVersion", "?")
+        src_ver = content.get("sourceDisplayVersion", "?")
+        target_guid = content.get("otaTargetSha1", "")
+        size = int(content.get("size", 0))
+        pkg_id = content.get("packageID", "")
+        md5 = content.get("md5_checksum", "")
+        utype = content.get("updateType", "?")
+        resources = data.get("contentResources") or []
+
+        print(f"\n  Step {step}: {src_ver} → {ver}")
+        print(f"    Type: {utype}  Size: {size / 1048576:.1f} MB")
+        print(f"    GUID: {cur_guid} → {target_guid}")
+        print(f"    Package: {pkg_id[:80]}")
+        print(f"    MD5: {md5}")
+
+        for res in resources:
+            dl_url = res.get("url", "")
+            tags = res.get("tags", [])
+            ttl = res.get("urlTtlSeconds", 0)
+            if not dl_url:
+                continue
+
+            tag_str = ",".join(tags)
+            print(f"    📥 [{tag_str}] TTL={ttl}s")
+
+            if args.verify_only:
+                try:
+                    head = req.head(dl_url, timeout=15, allow_redirects=True)
+                    cl = head.headers.get("Content-Length", "?")
+                    ct = head.headers.get("Content-Type", "?")
+                    print(f"       ✅ HEAD {head.status_code} size={cl} type={ct}")
+                except Exception as exc:
+                    print(f"       ❌ HEAD failed: {exc}")
+            elif "WIFI" in tags:
+                # Download using WIFI URL
+                safe_ver = re.sub(r"[^a-zA-Z0-9._-]", "_", ver)
+                filename = f"step{step}_{safe_ver}_{args.carrier}.zip"
+                filepath = out_dir / filename
+                print(f"       Downloading → {filepath}")
+                try:
+                    with req.get(dl_url, stream=True, timeout=600) as dl_resp:
+                        dl_resp.raise_for_status()
+                        total = int(dl_resp.headers.get("Content-Length", 0))
+                        downloaded = 0
+                        with open(filepath, "wb") as f:
+                            for chunk in dl_resp.iter_content(chunk_size=1048576):
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                pct = (downloaded / total * 100) if total else 0
+                                print(
+                                    f"\r       {downloaded / 1048576:.1f} / "
+                                    f"{total / 1048576:.1f} MB ({pct:.0f}%)",
+                                    end="",
+                                    flush=True,
+                                )
+                        print(f"\n       ✅ Saved: {filepath} ({downloaded} bytes)")
+                except Exception as exc:
+                    print(f"\n       ❌ Download failed: {exc}")
+
+        entry = {
+            "step": step,
+            "source_version": src_ver,
+            "target_version": ver,
+            "source_guid": cur_guid,
+            "target_guid": target_guid,
+            "size_bytes": size,
+            "update_type": utype,
+            "package_id": pkg_id,
+            "md5": md5,
+            "urls": [
+                {"url": r.get("url", ""), "tags": r.get("tags", []), "ttl": r.get("urlTtlSeconds", 0)}
+                for r in resources
+            ],
+        }
+        chain.append(entry)
+        cur_guid = target_guid
+        time.sleep(args.delay)
+
+    # Save chain metadata
+    meta_file = out_dir / f"chain_{args.carrier}_{args.guid[:8]}.json"
+    with open(meta_file, "w") as f:
+        json.dump(chain, f, indent=2)
+    print(f"\n  Chain metadata saved: {meta_file}")
+
+    # Summary
+    print(f"\n{'=' * 72}")
+    total_mb = sum(e["size_bytes"] for e in chain) / 1048576
+    print(f"  Chain: {len(chain)} steps, {total_mb:.1f} MB total")
+    if chain:
+        print(f"  From: {chain[0]['source_version']} → {chain[-1]['target_version']}")
+    print(f"{'=' * 72}")
+
+    return 0
+
+
+def _cmd_brute_force(args: argparse.Namespace) -> int:
+    """Brute-force discover GUIDs and test API configurations."""
+    import requests as req
+
+    host = "moto-cds.svcmot.cn" if args.region == "prc" else "moto-cds.appspot.com"
+
+    def _check(guid, carrier, context="ota"):
+        url = f"https://{host}/cds/upgrade/1/check/ctx/{context}/key/{guid}"
+        payload = {
+            "id": "x",
+            "deviceInfo": {"country": "US", "region": "US"},
+            "extraInfo": {
+                "carrier": carrier,
+                "vitalUpdate": False,
+                "otaSourceSha1": guid,
+            },
+            "triggeredBy": "user",
+        }
+        try:
+            resp = req.post(
+                url,
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "com.motorola.ccc.ota",
+                },
+                timeout=10,
+            )
+            data = resp.json()
+            cds = resp.headers.get("x-cds-content-exists", "?")
+            proceed = data.get("proceed", False)
+            content = data.get("content")
+            ver = content.get("displayVersion", "?") if content and proceed else "-"
+            return proceed, cds, ver
+        except Exception:
+            return None, None, "error"
+
+    all_carriers = [
+        "amxmx", "openmx", "retla", "reteu", "retgb", "retbr", "demogb",
+        "o2gb", "eegb", "vfeu", "3gb", "amxla", "amxpe", "amxbr",
+        "tefmx", "tefbr", "pluspl", "timbr", "attmx", "retin", "retar",
+        "amxar", "retapac", "teleu", "retru", "amxco", "amxcl",
+        "retus", "verizon", "sprint", "tmo", "att",
+    ]
+    all_contexts = ["ota", "fota", "modem", "firmware", "system", "recovery"]
+
+    print(f"{'=' * 72}")
+    print(f"  Brute-Force Scanner — server={host}")
+    print(f"{'=' * 72}")
+    found_count = 0
+
+    # 1. GUID adjacent scan
+    if args.guid:
+        print(f"\n--- GUID adjacent scan (±{args.scan_range}) ---")
+        base_int = int(args.guid, 16)
+        for offset in range(-args.scan_range, args.scan_range + 1):
+            if offset == 0:
+                continue
+            test_guid = format(base_int + offset, '015x')
+            proceed, cds, ver = _check(test_guid, args.carrier)
+            if proceed or cds == "true":
+                icon = "✅" if proceed else "📦"
+                print(f"  {icon} offset={offset:+d} guid={test_guid} → {ver} (cds={cds})")
+                found_count += 1
+            time.sleep(args.delay)
+
+    # 2. Carrier scan
+    if args.scan_carriers and args.guid:
+        print(f"\n--- Carrier scan for GUID {args.guid} ---")
+        for carrier in all_carriers:
+            proceed, cds, ver = _check(args.guid, carrier)
+            icon = "✅" if proceed else ("📦" if cds == "true" else "·")
+            if proceed or cds == "true":
+                print(f"  {icon} carrier={carrier:<12} → {ver} (cds={cds})")
+                found_count += 1
+            time.sleep(args.delay)
+
+    # 3. Context scan
+    if args.scan_contexts and args.guid:
+        print(f"\n--- URL context scan for GUID {args.guid} ---")
+        for ctx in all_contexts:
+            proceed, cds, ver = _check(args.guid, args.carrier, context=ctx)
+            icon = "✅" if proceed else "❌"
+            print(f"  {icon} ctx={ctx:<12} → {ver} (cds={cds})")
+            time.sleep(args.delay)
+
+    print(f"\n  Found: {found_count} results")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
 
@@ -833,6 +1108,8 @@ def main(argv: list[str] | None = None) -> int:
         "debug-server": _cmd_debug_server,
         "analyze-smali": _cmd_analyze_smali,
         "analyze-binary": _cmd_analyze_binary,
+        "download-ota": _cmd_download_ota,
+        "brute-force": _cmd_brute_force,
     }
     handler = dispatch.get(args.command)
     if handler is None:
