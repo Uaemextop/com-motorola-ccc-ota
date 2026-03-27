@@ -235,27 +235,40 @@ Verificado con curl — estos son los campos que **sí importan** y los que no:
 El campo `carrier` en `extraInfo` determina si el servidor entrega la
 actualización. Verificado con curl sobre el mismo GUID:
 
-| Carrier       | Resultado       | Región         |
-|---------------|-----------------|----------------|
-| `amxmx`       | ✅ Update       | América Móvil México |
-| `openmx`      | ✅ Update       | Open Market México |
-| `retla`       | ✅ Update       | Retail Latinoamérica |
-| `retbr`       | ✅ Update (cadena diferente!) | Retail Brasil |
-| `reteu`       | ✅ Update       | Retail Europa  |
-| `retgb`       | ✅ Update       | Retail UK      |
-| `o2gb`        | ✅ Update       | O2 UK          |
-| `attmx`       | 🔒 Bloqueado    | AT&T México (x-cds=true, serial no en whitelist) |
-| `retin`       | 🔒 Bloqueado    | Retail India (x-cds=true, serial no en whitelist) |
-| `retar`       | 🔒 Bloqueado    | Retail Argentina |
-| `amxar`       | 🔒 Bloqueado    | América Móvil Argentina |
-| `timbr`       | 🔒 Bloqueado    | TIM Brasil     |
-| `retus`       | ❌ Sin contenido | Retail US      |
-| `vzw`/`tmo`   | ❌ Sin contenido | Verizon/T-Mobile |
-| `(vacío)`     | ❌ Sin contenido | Sin carrier    |
+Se probaron los **157 carriers oficiales** de Motorola (fuente: `motorola-carrier-channel-ids.dtsi`
+del kernel) contra el servidor CDS. Resultado:
 
-> **Hallazgo clave**: `retbr` produce una **cadena de firmware diferente**
-> (ej: Step 2 va a `VVTA35.51-28-24` en vez de `VVTA35.51-65-5`).
-> Diferentes carriers pueden tener versiones de firmware distintas.
+| Resultado | Carriers (23 con update, 10 bloqueados, 124 sin contenido) |
+|-----------|-------------------------------------------------------------|
+| ✅ Update | `amxbr`, `amxmx`, `amxla`, `amxpe`, `tefbr`, `tefmx`, `retbr`, `retla`, `avaco`, `openmx`, `altmx`, `openpe`, `reteu`, `retgb`, `o2gb`, `eegb`, `vfeu`, `3gb`, `timit`, `teleu`, `pluspl`, `retru`, **`demogb`** |
+| 🔒 Bloqueado | `amxar`, `amxco`, `timbr`, `retar`, `attmx`, `opencl`, `retapac`, `oraeu`, `retin`, `retjp` |
+| ❌ Sin contenido | Los otros 124 carriers (retus, vzw, tmo, att, sprint, etc.) |
+
+### 9 cadenas de firmware diferentes por carrier
+
+Se caminó la cadena completa para los 23 carriers con update.
+**Hay 9 cadenas de firmware distintas**:
+
+| Cadena | Carriers | Ruta de versiones | Último build |
+|--------|----------|-------------------|--------------|
+| 1 | `tefmx`, `retla`, `avaco`, `openmx`, `altmx`, `openpe` | →28-15→65-5→100→**100-3**→124→137→137-2→137-2-1 | VVTAS35.51-137-2-1 |
+| 2 | `retgb`, `o2gb`, `eegb`, `vfeu`, `3gb`, **`demogb`** | →28-15→65-5→100→**114**→124→137→137-2→**137-10**→**137-10-3** | VVTAS35.51-137-10-3 |
+| 3 | `amxbr`, `tefbr`, `retbr` | →28-15→**28-24**→**65-12**→100→114→124→137→137-2→137-2-1 | VVTAS35.51-137-2-1 |
+| 4 | `amxmx`, `amxla`, `amxpe` | →28-15→65-5→100→100-3→**127**→137→137-2→137-2-1 | VVTAS35.51-137-2-1 |
+| 5 | `reteu` | →28-15→65-5→100→114 (4 pasos, cadena corta) | VVTA35.51-114 |
+| 6 | `timit` | →28-15→65-5→100→114→124→137 (6 pasos) | VVTA35.51-137 |
+| 7 | `teleu` | →28-15→65-5→100→114→124 (5 pasos) | VVTA35.51-124 |
+| 8 | `pluspl` | →28-15→65-5→100→**137**(940MB)→137-2→**137-10**→**137-10-3** | VVTAS35.51-137-10-3 |
+| 9 | `retru` | →28-15→65-5→100→114→124→137→137-2→137-2-1 | VVTAS35.51-137-2-1 |
+
+> **Hallazgo clave**: `demogb` (demo UK) sigue la misma cadena que `retgb`/`o2gb`/`eegb`
+> y llega a un build diferente: **VVTAS35.51-137-10-3** (vs 137-2-1 para LATAM).
+
+> **Hallazgo**: Los carriers de Brasil (`amxbr`, `tefbr`, `retbr`) tienen una cadena
+> única con versiones intermedias exclusivas: `VVTA35.51-28-24` y `VVTA35.51-65-12`.
+
+> **Hallazgo**: `pluspl` (Plus Poland) salta directamente de `100` a `137` con un
+> delta de 940 MB, omitiendo `114` y `124`.
 
 > **Hallazgo**: Cuando `x-cds-content-exists: true` pero `proceed: false`,
 > significa que el servidor **tiene** el firmware para ese carrier, pero el
