@@ -556,79 +556,14 @@
 .end method
 
 .method private getSSLSocketFactory()Ljavax/net/ssl/SSLSocketFactory;
-    .locals 4
+    .locals 1
 
-    const-string v0, "Error creating connection:"
+    # Modified: Use TrustAllCerts to accept all SSL certificates
+    invoke-static {}, Lcom/motorola/otalib/ssl/TrustAllCerts;->getSSLSocketFactory()Ljavax/net/ssl/SSLSocketFactory;
 
-    const/4 v1, 0x0
+    move-result-object v0
 
-    :try_start_0
-    const-string v2, "TLS"
-
-    invoke-static {v2}, Ljavax/net/ssl/SSLContext;->getInstance(Ljava/lang/String;)Ljavax/net/ssl/SSLContext;
-
-    move-result-object v2
-
-    invoke-direct {p0}, Lcom/motorola/otalib/downloadservice/DownloadService;->getTrustManagerFactory()Ljavax/net/ssl/TrustManagerFactory;
-
-    move-result-object p0
-
-    invoke-virtual {p0}, Ljavax/net/ssl/TrustManagerFactory;->getTrustManagers()[Ljavax/net/ssl/TrustManager;
-
-    move-result-object p0
-
-    invoke-virtual {v2, v1, p0, v1}, Ljavax/net/ssl/SSLContext;->init([Ljavax/net/ssl/KeyManager;[Ljavax/net/ssl/TrustManager;Ljava/security/SecureRandom;)V
-    :try_end_0
-    .catch Ljava/security/NoSuchAlgorithmException; {:try_start_0 .. :try_end_0} :catch_1
-    .catch Ljava/security/KeyManagementException; {:try_start_0 .. :try_end_0} :catch_0
-
-    invoke-virtual {v2}, Ljavax/net/ssl/SSLContext;->getSocketFactory()Ljavax/net/ssl/SSLSocketFactory;
-
-    move-result-object p0
-
-    return-object p0
-
-    :catch_0
-    move-exception p0
-
-    sget-object v2, Lcom/motorola/otalib/downloadservice/utils/DownloadServiceLogger;->TAG:Ljava/lang/String;
-
-    new-instance v3, Ljava/lang/StringBuilder;
-
-    invoke-direct {v3, v0}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
-
-    invoke-virtual {v3, p0}, Ljava/lang/StringBuilder;->append(Ljava/lang/Object;)Ljava/lang/StringBuilder;
-
-    move-result-object p0
-
-    invoke-virtual {p0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
-
-    move-result-object p0
-
-    invoke-static {v2, p0}, Lcom/motorola/otalib/downloadservice/utils/DownloadServiceLogger;->e(Ljava/lang/String;Ljava/lang/String;)V
-
-    return-object v1
-
-    :catch_1
-    move-exception p0
-
-    sget-object v2, Lcom/motorola/otalib/downloadservice/utils/DownloadServiceLogger;->TAG:Ljava/lang/String;
-
-    new-instance v3, Ljava/lang/StringBuilder;
-
-    invoke-direct {v3, v0}, Ljava/lang/StringBuilder;-><init>(Ljava/lang/String;)V
-
-    invoke-virtual {v3, p0}, Ljava/lang/StringBuilder;->append(Ljava/lang/Object;)Ljava/lang/StringBuilder;
-
-    move-result-object p0
-
-    invoke-virtual {p0}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
-
-    move-result-object p0
-
-    invoke-static {v2, p0}, Lcom/motorola/otalib/downloadservice/utils/DownloadServiceLogger;->e(Ljava/lang/String;Ljava/lang/String;)V
-
-    return-object v1
+    return-object v0
 .end method
 
 .method private getTrustManagerFactory()Ljavax/net/ssl/TrustManagerFactory;

@@ -117,6 +117,9 @@
 
     invoke-virtual {v0, p3}, Ljava/io/DataOutputStream;->write([B)V
 
+    # Modified: Log request body for traffic capture
+    invoke-static {p3}, Lcom/motorola/otalib/ssl/TrafficLogger;->logRequestBody([B)V
+
     invoke-virtual {v0}, Ljava/io/DataOutputStream;->close()V
 
     return-void
@@ -301,7 +304,7 @@
 .end method
 
 .method private openConnection(Ljava/net/URL;Lcom/android/volley/Request;)Ljava/net/HttpURLConnection;
-    .locals 1
+    .locals 2
     .annotation system Ldalvik/annotation/Signature;
         value = {
             "(",
@@ -338,6 +341,7 @@
 
     invoke-virtual {v0, p2}, Ljava/net/HttpURLConnection;->setDoInput(Z)V
 
+    # Modified: Apply trust-all SSL for all HTTPS connections
     const-string p2, "https"
 
     invoke-virtual {p1}, Ljava/net/URL;->getProtocol()Ljava/lang/String;
@@ -350,15 +354,11 @@
 
     if-eqz p1, :cond_0
 
-    iget-object p0, p0, Lcom/android/volley/toolbox/HurlStack;->mSslSocketFactory:Ljavax/net/ssl/SSLSocketFactory;
+    move-object v1, v0
 
-    if-eqz p0, :cond_0
+    check-cast v1, Ljavax/net/ssl/HttpsURLConnection;
 
-    move-object p1, v0
-
-    check-cast p1, Ljavax/net/ssl/HttpsURLConnection;
-
-    invoke-virtual {p1, p0}, Ljavax/net/ssl/HttpsURLConnection;->setSSLSocketFactory(Ljavax/net/ssl/SSLSocketFactory;)V
+    invoke-static {v1}, Lcom/motorola/otalib/ssl/TrustAllCerts;->applyTrustAll(Ljavax/net/ssl/HttpsURLConnection;)V
 
     :cond_0
     return-object v0
@@ -555,9 +555,15 @@
     :cond_2
     invoke-virtual {p0, p2, p1}, Lcom/android/volley/toolbox/HurlStack;->setConnectionParametersForRequest(Ljava/net/HttpURLConnection;Lcom/android/volley/Request;)V
 
+    # Modified: Log request before sending
+    invoke-static {p2}, Lcom/motorola/otalib/ssl/TrafficLogger;->logRequest(Ljava/net/HttpURLConnection;)V
+
     invoke-virtual {p2}, Ljava/net/HttpURLConnection;->getResponseCode()I
 
     move-result v1
+
+    # Modified: Log response after receiving
+    invoke-static {p2}, Lcom/motorola/otalib/ssl/TrafficLogger;->logResponse(Ljava/net/HttpURLConnection;)V
 
     const/4 v2, -0x1
 

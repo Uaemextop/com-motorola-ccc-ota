@@ -362,127 +362,10 @@
 .method public static getStatusVerifyResult(Ljava/lang/String;)Ljava/lang/String;
     .locals 2
 
-    const-string v0, "no signature in file (no footer)"
+    # Modified: Always return empty string (verification bypassed)
+    const-string v0, ""
 
-    invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
-
-    move-result v1
-
-    if-eqz v1, :cond_0
-
-    :goto_0
-    move-object p0, v0
-
-    goto :goto_1
-
-    :cond_0
-    const-string v0, "no signature in file (bad footer)"
-
-    invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
-
-    move-result v1
-
-    if-eqz v1, :cond_1
-
-    goto :goto_0
-
-    :cond_1
-    const-string v0, "EOCD marker found after start of EOCD"
-
-    invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
-
-    move-result v0
-
-    if-eqz v0, :cond_2
-
-    const-string p0, "EOCD marker found after start of EOCD(Signature info improper)"
-
-    goto :goto_1
-
-    :cond_2
-    const-string v0, "signedData is null"
-
-    invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
-
-    move-result v1
-
-    if-eqz v1, :cond_3
-
-    goto :goto_0
-
-    :cond_3
-    const-string v0, "encCerts is empty"
-
-    invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
-
-    move-result v0
-
-    if-eqz v0, :cond_4
-
-    const-string p0, "encCerts is empty(encoded certificate in signature is empty)"
-
-    goto :goto_1
-
-    :cond_4
-    const-string v0, "signature contains no certificates"
-
-    invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
-
-    move-result v1
-
-    if-eqz v1, :cond_5
-
-    goto :goto_0
-
-    :cond_5
-    const-string v0, "no signer infos!"
-
-    invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
-
-    move-result v0
-
-    if-eqz v0, :cond_6
-
-    const-string p0, "no signer infos!(no signer infos in encoded certificates)"
-
-    goto :goto_1
-
-    :cond_6
-    const-string v0, "signature doesn\'t match any trusted key"
-
-    invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
-
-    move-result v1
-
-    if-eqz v1, :cond_7
-
-    goto :goto_0
-
-    :cond_7
-    const-string v0, "verification was interrupted"
-
-    invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
-
-    move-result v1
-
-    if-eqz v1, :cond_8
-
-    goto :goto_0
-
-    :cond_8
-    const-string v0, "signature digest verification failed"
-
-    invoke-virtual {p0, v0}, Ljava/lang/String;->contains(Ljava/lang/CharSequence;)Z
-
-    move-result v1
-
-    if-eqz v1, :cond_9
-
-    goto :goto_0
-
-    :cond_9
-    :goto_1
-    return-object p0
+    return-object v0
 .end method
 
 .method public static getUpdateDownloadStatusIntent(Ljava/lang/String;Ljava/lang/String;JJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;IZ)Landroid/content/Intent;
@@ -1079,6 +962,7 @@
 .method public static sendActionVerifyPayloadStatus(Landroid/content/Context;Z)V
     .locals 2
 
+    # Modified: Always send true for verification status
     new-instance v0, Landroid/content/Intent;
 
     const-string v1, "com.motorola.ccc.ota.ACTION_VAB_VERIFY_STATUS"
@@ -1086,6 +970,8 @@
     invoke-direct {v0, v1}, Landroid/content/Intent;-><init>(Ljava/lang/String;)V
 
     const-string v1, "com.motorola.ccc.ota.VAB_VALIDATION_STATUS"
+
+    const/4 p1, 0x1
 
     invoke-virtual {v0, v1, p1}, Landroid/content/Intent;->putExtra(Ljava/lang/String;Z)Landroid/content/Intent;
 
