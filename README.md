@@ -405,165 +405,188 @@ de upload de archivos (`store-ota.svcmot.com`).
 
 ## Depuración CDS para obtener actualizaciones de Carrier
 
-### Cómo funciona el routing por carrier
+### Hallazgo principal: payload simplificado
 
-El servidor CDS usa el campo `carrier` en `extraInfo` como **parámetro
-principal de routing** para decidir qué firmware entregar. El flujo es:
-
-```
-Request: POST /cds/upgrade/1/check/ctx/ota/key/{GUID}
-  Body.extraInfo.carrier = "amxmx"  ← determina qué firmware se entrega
-
-Server evalúa:
-  1. ¿Existe contenido para este GUID+carrier?  → x-cds-content-exists header
-  2. ¿El serial está en la whitelist?            → serialNoListType: Inclusive
-  3. ¿El deployment está abierto?                → deploymentPlanPhase: Open
-  → Si todo OK: proceed=true + content con URLs de descarga
-  → Si existe pero serial no está: proceed=false + x-cds-content-exists=true
-  → Si no existe: proceed=false + x-cds-content-exists=false
-```
-
-### Hallazgos de la depuración con curl
-
-Resultado de pruebas exhaustivas contra `moto-cds.svcmot.cn`:
-
-**1. El campo `carrier` es el único campo del body que afecta el routing:**
+Se descubrió mediante depuración curl directa contra los servidores CDS
+oficiales de Motorola que el servidor acepta un **payload mínimo**.
+Solo se necesitan 3 campos para obtener actualizaciones con URLs de descarga:
 
 ```bash
-# Con carrier válido → ✅ update disponible
-curl -s -X POST 'https://moto-cds.svcmot.cn/cds/upgrade/1/check/ctx/ota/key/{GUID}' \
-  -H 'Content-Type: application/json; charset=utf-8' \
-  -d '{"extraInfo":{"carrier":"amxmx","otaSourceSha1":"{GUID}",...},...}'
-# → proceed: true, content: {displayVersion, size, packageID, urls...}
-
-# Sin carrier o carrier inválido → ❌ sin update
-curl -s -X POST '...' -d '{"extraInfo":{"carrier":"","otaSourceSha1":"{GUID}",...},...}'
-# → proceed: false, x-cds-content-exists: false
-```
-
-**2. Campos que NO afectan el routing** (probados individualmente):
-- `buildType` (user/userdebug/eng)
-- `fingerprint` (cualquier valor)
-- `imei` / `mccmnc` (cualquier valor)
-- `buildTags` (release-keys/dev-keys)
-- `osVersion`, `contentTimestamp`
-- `triggeredBy` (user/polling/setup — todos aceptados)
-
-**3. Campos que SÍ bloquean updates:**
-- `vitalUpdate: true` → servidor retorna `proceed: false` siempre
-- `carrier: ""` → sin carrier no hay routing posible
-
-**4. Header de respuesta clave:**
-- `x-cds-content-exists: true` → el servidor TIENE firmware pero no lo entrega
-  (serial no está en whitelist o deployment no es "Open")
-- `x-cds-content-exists: false` → no hay firmware para ese GUID+carrier
-
-**5. Contextos disponibles** (probados en URL `/ctx/{ctx}/key/{GUID}`):
-- `ctx=ota` → único contexto con paquetes publicados
-- `ctx=fota` → siempre `proceed: false` (firmware-over-the-air de carrier)
-- `ctx=modem` → siempre `proceed: false` (firmware de modem/radio)
-
-**6. Expiración de OTA packages:**
-Los packages OTA se retiran del servidor después de un tiempo. El GUID
-`0d5cc74421f2e8a` devolvía updates hasta marzo 2026 pero fue retirado.
-El servidor responde `proceed: false, x-cds-content-exists: false` cuando
-el GUID ya no tiene packages activos. No existe endpoint para consultar
-packages históricos.
-
-### Cómo obtener actualizaciones de un carrier específico
-
-```bash
-# 1. Obtener GUID actual del dispositivo:
-#    adb shell getprop ro.mot.build.guid  →  "0d5cc74421f2e8a"
-
-# 2. Consultar con el carrier deseado:
-python -m ota_analyzer check-update \
-    --model "moto g05" \
-    --fingerprint "motorola/lamul_g/lamul:15/VVTA35.51-18-6/1e9f09:user/release-keys" \
-    --guid "0d5cc74421f2e8a" \
-    --serial "ZY32LNRW97" \
-    --carrier "demogb" \
-    --hardware "mt6768" \
-    --region prc
-
-# 3. Enumerar cadena completa del carrier:
-python -m ota_analyzer enumerate-updates \
-    --model "moto g05" \
-    --fingerprint "motorola/lamul_g/lamul:15/VVTA35.51-18-6/1e9f09:user/release-keys" \
-    --guid "0d5cc74421f2e8a" \
-    --serial "ZY32LNRW97" \
-    --carrier "demogb" \
-    --hardware "mt6768" \
-    --region prc \
-    --output cadena_demogb.json
-
-# 4. Equivalente curl directo:
+# ✅ PAYLOAD MÍNIMO — funciona en ambos servidores (svcmot.cn Y appspot.com)
 curl -s -X POST \
   'https://moto-cds.svcmot.cn/cds/upgrade/1/check/ctx/ota/key/0d5cc74421f2e8a' \
-  -H 'Content-Type: application/json; charset=utf-8' \
-  -H 'User-Agent: Dalvik/2.1.0 (Linux; U; Android 15; moto g05 Build/VVTA35.51-18-6)' \
+  -H 'Content-Type: application/json' \
+  -H 'User-Agent: com.motorola.ccc.ota' \
   -d '{
-    "id": "ZY32LNRW97",
-    "contentTimestamp": 0,
-    "deviceInfo": {
-      "manufacturer": "motorola", "hardware": "mt6768",
-      "brand": "motorola", "model": "moto g05", "product": "",
-      "os": "Linux:null:null", "osVersion": "15",
-      "country": "", "region": "US", "language": "es", "userLanguage": "es_US"
-    },
+    "id": "SERIAL_NUMBER_NOT_AVAILABLE",
+    "deviceInfo": {"country": "US", "region": "US"},
     "extraInfo": {
-      "clientIdentity": "motorola-ota-client-app",
-      "carrier": "demogb",
-      "brand": "motorola", "model": "moto g05",
-      "fingerprint": "motorola/lamul_g/lamul:15/VVTA35.51-18-6/1e9f09:user/release-keys",
-      "buildDevice": "lamul", "buildId": "VVTA35.51-18-6",
-      "otaSourceSha1": "0d5cc74421f2e8a",
-      "network": "WIFI", "apkVersion": 3500094,
-      "imei": "359488357396203", "mccmnc": "334020",
-      "ro.virtual_ab.enabled": true
+      "carrier": "amxmx",
+      "vitalUpdate": false,
+      "otaSourceSha1": "0d5cc74421f2e8a"
     },
-    "identityInfo": {"serialNumber": "ZY32LNRW97"},
-    "triggeredBy": "user",
-    "idType": "serialNumber"
+    "triggeredBy": "user"
   }' | python3 -m json.tool
 ```
 
-### Respuesta del servidor cuando no hay actualizaciones
+**Campos obligatorios del payload:**
+- `id` → cualquier string (no necesita serial real)
+- `extraInfo.carrier` → carrier válido (determina la cadena de firmware)
+- `extraInfo.otaSourceSha1` → GUID del build actual (debe coincidir con URL `/key/`)
+- `extraInfo.vitalUpdate` → debe ser `false` (`true` bloquea updates)
+- `triggeredBy` → `"user"` (otros valores no devuelven updates en producción)
 
+**Campos opcionales:**
+- `deviceInfo.country` / `deviceInfo.region` → solo importa para `retcn` (China)
+- `identityInfo.serialNumber` → no necesario para builds abiertos
+- `idType`, `contentTimestamp` → aceptados pero ignorados
+
+### Cómo descargar OTA de cualquier carrier
+
+**Paso 1:** Obtener el GUID del dispositivo (desde `adb` o `build.prop`):
+```bash
+adb shell getprop ro.mot.build.guid  # → "0d5cc74421f2e8a"
+```
+
+**Paso 2:** Consultar con curl mínimo:
+```bash
+curl -s -X POST \
+  'https://moto-cds.appspot.com/cds/upgrade/1/check/ctx/ota/key/0d5cc74421f2e8a' \
+  -H 'Content-Type: application/json' \
+  -H 'User-Agent: com.motorola.ccc.ota' \
+  -d '{"id":"x","deviceInfo":{"country":"US","region":"US"},"extraInfo":{"carrier":"amxmx","vitalUpdate":false,"otaSourceSha1":"0d5cc74421f2e8a"},"triggeredBy":"user"}'
+```
+
+**Paso 3:** De la respuesta, extraer la URL de descarga:
 ```json
 {
-  "proceed": false,
-  "context": "ota",
-  "contextKey": "0d5cc74421f2e8a",
-  "content": null,
-  "contentTimestamp": 0,
-  "contentResources": null,
-  "trackingId": null,
-  "reportingTags": null,
-  "pollAfterSeconds": 172800,
-  "smartUpdateBitmap": 7,
-  "uploadFailureLogs": false
+  "proceed": true,
+  "content": {
+    "displayVersion": "VVTA35.51-28-15",
+    "size": "111043449",
+    "packageID": "delta-Ota_Version_lamul_g_VVTA35.51-18-6_1e9f09-...",
+    "md5_checksum": "...",
+    "otaTargetSha1": "23d670d5d06f351"
+  },
+  "contentResources": [
+    {"url": "https://dlmgr.gtm.svcmot.com/dl/dlws/1/download/...", "tags": ["WIFI","DLMGR_AGENT"], "urlTtlSeconds": 600},
+    {"url": "https://dlmgr.gtm.svcmot.com/dl/dlws/1/download/...", "tags": ["CELL","DLMGR_AGENT"], "urlTtlSeconds": 600}
+  ]
 }
 ```
 
-Headers de respuesta:
+**Paso 4:** Descargar el OTA directamente (URL válida por 600 segundos):
+```bash
+# Descargar con wget o curl (URLs soportan HEAD y Range)
+wget -O ota_step1.zip "URL_FROM_RESPONSE"
+
+# Verificar antes de descargar:
+curl -I "URL_FROM_RESPONSE"
+# Content-Type: application/octetstream
+# Content-Length: 111043449
+# Accept-Ranges: bytes
 ```
-x-cds-content-exists: false    ← no hay contenido para este GUID+carrier
-cache-control: no-cache, no-store, must-revalidate
-x-cloud-trace-context: {trace-id}
-Server: nginx/1.14.1           ← proxy nginx frente a GAE
+
+**Paso 5:** Para la siguiente actualización, usar `otaTargetSha1` como nuevo GUID:
+```bash
+curl -s -X POST \
+  'https://moto-cds.appspot.com/cds/upgrade/1/check/ctx/ota/key/23d670d5d06f351' \
+  -H 'Content-Type: application/json' \
+  -H 'User-Agent: com.motorola.ccc.ota' \
+  -d '{"id":"x","deviceInfo":{"country":"US","region":"US"},"extraInfo":{"carrier":"amxmx","vitalUpdate":false,"otaSourceSha1":"23d670d5d06f351"},"triggeredBy":"user"}'
 ```
+
+### Cadenas OTA verificadas por carrier (marzo 2026)
+
+Se caminaron las cadenas completas para 6 carriers con el payload simplificado.
+Todas las URLs de descarga fueron verificadas con `HEAD` (status 200):
+
+| Carrier | Pasos | Último build | Tamaño total | URLs |
+|---------|-------|-------------|-------------|------|
+| `amxmx` (LATAM/México AMX) | 8 | VVTAS35.51-137-2-1 | 1,622 MB | 16 |
+| `retgb` (UK Retail) | 9 | VVTAS35.51-137-10-3 | 1,674 MB | 18 |
+| `demogb` (UK Demo) | 9 | VVTAS35.51-137-10-3 | 1,674 MB | 18 |
+| `retbr` (Brazil Retail) | 9 | VVTAS35.51-137-2-1 | 1,675 MB | 18 |
+| `reteu` (EU Retail) | 4 | VVTA35.51-114 | 1,462 MB | 8 |
+| `retla` (LATAM Retail) | 8 | VVTAS35.51-137-2-1 | 1,625 MB | 16 |
+
+#### Cadena completa amxmx (ejemplo)
+
+```
+Step 1: VVTA35.51-18-6   → VVTA35.51-28-15      105.9 MB  MR
+Step 2: VVTA35.51-28-15  → VVTA35.51-65-5       338.5 MB  MR
+Step 3: VVTA35.51-65-5   → VVTA35.51-100        134.1 MB  MR
+Step 4: VVTA35.51-100    → VVTAS35.51-100-3      19.0 MB  SMR
+Step 5: VVTAS35.51-100-3 → VVTA35.51-127        916.7 MB  MR
+Step 6: VVTA35.51-127    → VVTA35.51-137         70.5 MB  MR
+Step 7: VVTA35.51-137    → VVTAS35.51-137-2      22.2 MB  SMR
+Step 8: VVTAS35.51-137-2 → VVTAS35.51-137-2-1    15.2 MB  SMR
+```
+
+### URLs de descarga — CDNs y formato
+
+Cada paso de la cadena incluye 2 URLs de descarga en `contentResources`:
+
+| CDN | Tag | Formato URL |
+|-----|-----|-------------|
+| `dlmgr.gtm.svcmot.com` | `WIFI,DLMGR_AGENT` | `/dl/dlws/1/download/...` (tokens URL-encoded) |
+| `dlmgredg-vz.gtm.svcmot.com` | `CELL,EDGECAST_AGENT` | `/{packageID}/...` (directo) |
+
+- Las URLs expiran después de **600 segundos** (`urlTtlSeconds`)
+- Soportan **HEAD** y **Range** requests (descarga parcial/resumable)
+- Los archivos son **ZIP** conteniendo `payload.bin` (formato Chrome OS Update)
+- `Content-Type: application/octetstream`
+
+### Servidores que funcionan
+
+Ambos servidores de producción funcionan con el payload simplificado:
+
+| Servidor | Resultado |
+|----------|-----------|
+| `moto-cds.svcmot.cn` | ✅ proceed=true |
+| `moto-cds.appspot.com` | ✅ proceed=true |
+| `moto-cds-staging.appspot.com` | ❌ sin packages |
+| `moto-cds-qa.appspot.com` | ❌ sin packages |
+| `moto-cds-dev.appspot.com` | ❌ sin packages |
+
+### Campos del body — análisis comparativo
+
+Se probó campo por campo para determinar qué afecta el resultado:
+
+| Campo | ¿Afecta routing? | Notas |
+|-------|-------------------|-------|
+| `extraInfo.carrier` | **SÍ (crítico)** | Determina la cadena de firmware |
+| `extraInfo.otaSourceSha1` | **SÍ** | Debe coincidir con GUID en URL |
+| `extraInfo.vitalUpdate` | **SÍ (bloqueador)** | `true` = siempre `proceed: false` |
+| `triggeredBy` | **SÍ** | Solo `"user"` devuelve updates en producción |
+| `id` | No | Acepta cualquier string |
+| `identityInfo.serialNumber` | No | Solo requerido para builds serial-whitelisted |
+| `deviceInfo.*` | No | Ignorado para routing |
+| `extraInfo.fingerprint` | No | Ignorado |
+| `extraInfo.buildType` | No | Ignorado |
+| `extraInfo.imei` | No | Ignorado |
+| `extraInfo.mccmnc` | No | Ignorado |
+| `idType` | No | Acepta cualquier valor |
+| `contentTimestamp` | No | Ignorado |
+
+### Fuentes de GUIDs para consultar
+
+Para poder consultar OTA, necesitas un GUID (`ro.mot.build.guid`).
+Fuentes conocidas:
+
+1. **Desde el dispositivo**: `adb shell getprop ro.mot.build.guid`
+2. **Desde firmware descargado**: El archivo `build.prop` dentro del
+   firmware fastboot contiene `ro.mot.build.guid=...`
 
 ### Limitaciones descubiertas
 
-1. **No hay endpoint para listar carriers disponibles** — hay que probarlos uno a uno
-2. **No hay endpoint para listar GUIDs activos** — solo se puede consultar un GUID conocido
-3. **Los packages OTA expiran** — el servidor los retira después de un tiempo
-4. **No hay API para firmware completo** — solo deltas OTA incrementales
-5. **`ctx=fota` y `ctx=modem` no tienen packages** — solo `ctx=ota` funciona
-6. **Staging/Dev/QA no tienen packages** — solo producción (`moto-cds.svcmot.cn` y `moto-cds.appspot.com`)
-7. **El resources endpoint necesita un trackingId real** — sin él devuelve `UPGRADE_RESOURCE_NOT_FOUND`
-8. **API v2 retorna exactamente lo mismo que v1** — no hay endpoints ocultos
+1. **No hay endpoint para listar carriers disponibles** — hay que probarlos
+2. **No hay endpoint para listar GUIDs activos** — necesitas obtener uno de un dispositivo o firmware
+3. **No hay API para firmware completo** — solo deltas OTA incrementales
+4. **`ctx=fota` y `ctx=modem` no tienen packages** — solo `ctx=ota` funciona
+5. **Staging/Dev/QA no tienen packages** — solo producción
+6. **API v2 retorna exactamente lo mismo que v1** — no hay endpoints ocultos
+7. **URLs expiran rápido (600s)** — hay que generar nuevas para cada descarga
 
 ## Fuentes del análisis
 
