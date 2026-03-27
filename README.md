@@ -669,7 +669,7 @@ Keys principales para el JSON del request `/cds/upgrade/1/check`:
     "hardware": "...",
     "brand": "motorola",
     "model": "...",
-    "product": "",                  // DEBE ser vacío
+    "product": "",                  // vacío en tráfico real (server lo ignora)
     "os": "Linux:null:null",
     "osVersion": "15",
     "country": "US",
