@@ -10,20 +10,27 @@ TUI with:
   · Rounded borders, accent / muted colour scheme
 
 Uses **only** the ``rich`` library with ``Live(screen=True)`` for
-full-screen rendering and raw ``termios`` input for arrow-key
-navigation.  The starfield animates via non-blocking key reading
-with ``select()`` timeouts.
+full-screen rendering.  Keyboard input uses ``termios`` on Unix and
+``msvcrt`` on Windows.  The starfield animates via non-blocking key
+reading with timeouts.
 """
 
 from __future__ import annotations
 
 import random
-import select
 import sys
-import termios
-import tty
+import time
 from pathlib import Path
 from typing import Any
+
+_IS_WINDOWS = sys.platform == "win32"
+
+if _IS_WINDOWS:
+    import msvcrt
+else:
+    import select
+    import termios
+    import tty
 
 from rich import box
 from rich.align import Align
@@ -141,7 +148,7 @@ def _gradient_logo() -> Text:
 
 
 # =====================================================================
-#  Keyboard input  (raw termios — blocking and non-blocking)
+#  Keyboard input  (cross-platform: termios on Unix, msvcrt on Windows)
 # =====================================================================
 
 
@@ -149,6 +156,55 @@ def _read_key() -> str:
     """Read a single keypress (blocking).  Returns ``'up'``, ``'down'``,
     ``'enter'``, ``'escape'``, ``'quit'``, or the literal char.
     """
+    if _IS_WINDOWS:
+        return _read_key_win()
+    return _read_key_unix()
+
+
+def _read_key_timeout(timeout: float = 0.12) -> str | None:
+    """Non-blocking key read with timeout.
+
+    Returns ``None`` if no key was pressed within *timeout* seconds.
+    Used for animated screens that need to refresh continuously.
+    """
+    if _IS_WINDOWS:
+        return _read_key_timeout_win(timeout)
+    return _read_key_timeout_unix(timeout)
+
+
+# -- Windows implementations ------------------------------------------
+
+def _read_key_win() -> str:
+    """Blocking key read using msvcrt (Windows)."""
+    ch = msvcrt.getwch()
+    if ch in ("\x00", "\xe0"):
+        # Arrow keys / special keys come as two-char sequences
+        ch2 = msvcrt.getwch()
+        _map = {"H": "up", "P": "down", "K": "left", "M": "right"}
+        return _map.get(ch2, "")
+    if ch == "\x1b":
+        return "escape"
+    if ch in ("\r", "\n"):
+        return "enter"
+    if ch == "q":
+        return "quit"
+    return ch
+
+
+def _read_key_timeout_win(timeout: float = 0.12) -> str | None:
+    """Non-blocking key read with timeout using msvcrt (Windows)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if msvcrt.kbhit():
+            return _read_key_win()
+        time.sleep(0.01)
+    return None
+
+
+# -- Unix implementations ---------------------------------------------
+
+def _read_key_unix() -> str:
+    """Blocking key read using termios (Unix/macOS)."""
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     try:
@@ -174,12 +230,8 @@ def _read_key() -> str:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
-def _read_key_timeout(timeout: float = 0.12) -> str | None:
-    """Non-blocking key read with timeout.
-
-    Returns ``None`` if no key was pressed within *timeout* seconds.
-    Used for animated screens that need to refresh continuously.
-    """
+def _read_key_timeout_unix(timeout: float = 0.12) -> str | None:
+    """Non-blocking key read with timeout using termios (Unix/macOS)."""
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)
     try:
@@ -819,18 +871,28 @@ def run_tui() -> None:
         console.print("Use CLI mode instead: [bold]moto-ota --help[/]")
         return
 
-    fd = sys.stdin.fileno()
-    original_attr = termios.tcgetattr(fd)
-    try:
-        _run_tui_inner()
-    except (KeyboardInterrupt, EOFError):
-        pass
-    finally:
+    if _IS_WINDOWS:
+        # Windows: msvcrt handles terminal state automatically
         try:
-            termios.tcsetattr(fd, termios.TCSADRAIN, original_attr)
-        except termios.error:
+            _run_tui_inner()
+        except (KeyboardInterrupt, EOFError):
             pass
-        console.print(f"\n[bold {ACCENT}]Goodbye![/]")
+        finally:
+            console.print(f"\n[bold {ACCENT}]Goodbye![/]")
+    else:
+        # Unix: save/restore terminal attributes for safety
+        fd = sys.stdin.fileno()
+        original_attr = termios.tcgetattr(fd)
+        try:
+            _run_tui_inner()
+        except (KeyboardInterrupt, EOFError):
+            pass
+        finally:
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, original_attr)
+            except termios.error:
+                pass
+            console.print(f"\n[bold {ACCENT}]Goodbye![/]")
 
 
 def _run_tui_inner() -> None:
