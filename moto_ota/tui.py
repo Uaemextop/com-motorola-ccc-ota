@@ -1,4 +1,9 @@
-"""Rich interactive terminal UI for the Motorola OTA Downloader.
+"""Penumbra-style Rich TUI for the Motorola OTA Downloader.
+
+Keyboard-driven interface with split-pane layouts, ASCII art banner,
+and purple/blue colour accents.  Uses **only** the ``rich`` library
+(no textual, no curses) with ``rich.live.Live`` for real-time display
+and raw ``termios`` input for arrow-key navigation.
 
 Launched when ``moto-ota`` is invoked without a subcommand, or
 explicitly via ``moto-ota interactive``.
@@ -6,18 +11,26 @@ explicitly via ``moto-ota interactive``.
 
 from __future__ import annotations
 
+import select
+import sys
+import termios
+import tty
 from pathlib import Path
+from typing import Any
 
-from rich.console import Console
+from rich.align import Align
+from rich.console import Console, Group
+from rich.layout import Layout
+from rich.live import Live
 from rich.panel import Panel
-from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich.text import Text
 
 from moto_ota import __version__
-from moto_ota.config.app_config import APP_CONFIG_FIELDS, AppConfig
+from moto_ota.config.app_config import APP_CONFIG_FIELDS
 from moto_ota.config.carriers import CARRIERS, open_carriers
-from moto_ota.config.device_config import DEVICE_CONFIG_FIELDS, DeviceConfig
+from moto_ota.config.device_config import DEVICE_CONFIG_FIELDS
 from moto_ota.config.manager import (
     app_config_path,
     device_config_path,
@@ -30,107 +43,400 @@ from moto_ota.config.servers import SERVERS, ServerEnv
 from moto_ota.core.client import OTAClient
 from moto_ota.core.downloader import download_chain
 
+# ── colour palette ───────────────────────────────────────────────────
+_PURPLE = "#af5fff"
+_BLUE = "#5f87ff"
+_DIM = "dim"
+_BOLD = "bold"
+
 console = Console()
 
+# ── ASCII art logo ───────────────────────────────────────────────────
+_LOGO = r"""
+ ███╗   ███╗ ██████╗ ████████╗ ██████╗        ██████╗ ████████╗ █████╗
+ ████╗ ████║██╔═══██╗╚══██╔══╝██╔═══██╗      ██╔═══██╗╚══██╔══╝██╔══██╗
+ ██╔████╔██║██║   ██║   ██║   ██║   ██║█████╗██║   ██║   ██║   ███████║
+ ██║╚██╔╝██║██║   ██║   ██║   ██║   ██║╚════╝██║   ██║   ██║   ██╔══██║
+ ██║ ╚═╝ ██║╚██████╔╝   ██║   ╚██████╔╝      ╚██████╔╝   ██║   ██║  ██║
+ ╚═╝     ╚═╝ ╚═════╝    ╚═╝    ╚═════╝        ╚═════╝    ╚═╝   ╚═╝  ╚═╝
+"""
 
-# -- generic field editor ----------------------------------------------
+# ── keyboard input ───────────────────────────────────────────────────
 
 
-def _edit_field(field_meta: dict, current_value) -> object:
-    """Show the appropriate editor for a config field and return the
-    new value, or *current_value* if unchanged.
+def _read_key() -> str:
+    """Read a single keypress from stdin in raw mode.
+
+    Returns one of: ``'up'``, ``'down'``, ``'left'``, ``'right'``,
+    ``'enter'``, ``'escape'``, ``'quit'``, or the literal character.
+    """
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+        if ch == "\x1b":
+            # Wait briefly for follow-up bytes of an escape sequence
+            if select.select([sys.stdin], [], [], 0.05)[0]:
+                ch2 = sys.stdin.read(1)
+                if ch2 == "[" and select.select([sys.stdin], [], [], 0.05)[0]:
+                    ch3 = sys.stdin.read(1)
+                    if ch3 == "A":
+                        return "up"
+                    if ch3 == "B":
+                        return "down"
+                    if ch3 == "C":
+                        return "right"
+                    if ch3 == "D":
+                        return "left"
+            return "escape"
+        if ch in ("\r", "\n"):
+            return "enter"
+        if ch == "q":
+            return "quit"
+        return ch
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+# ── renderable builders ─────────────────────────────────────────────
+
+
+def _menu_renderable(
+    items: list[str],
+    selected: int,
+    *,
+    title: str = "",
+) -> Panel:
+    """Build a ``Panel`` showing *items* with a highlighted *selected* row."""
+    lines = Text()
+    for i, label in enumerate(items):
+        if i == selected:
+            lines.append("  ▶ ", style=f"bold {_PURPLE}")
+            lines.append(f"{label}\n", style=f"bold {_PURPLE}")
+        else:
+            lines.append(f"    {label}\n", style=_DIM)
+    return Panel(
+        lines,
+        title=f"[bold {_BLUE}]{title}[/]" if title else None,
+        border_style=_BLUE,
+        padding=(1, 2),
+    )
+
+
+def _description_panel(text: str, *, title: str = "Details") -> Panel:
+    """Build a right-side description panel."""
+    return Panel(
+        Text(text),
+        title=f"[bold {_BLUE}]{title}[/]",
+        border_style=_BLUE,
+        padding=(1, 2),
+    )
+
+
+def _split_layout(
+    left: Panel,
+    right: Panel,
+) -> Layout:
+    """Two-column layout (menu | description)."""
+    layout = Layout()
+    layout.split_row(
+        Layout(left, name="menu", ratio=2),
+        Layout(right, name="detail", ratio=3),
+    )
+    return layout
+
+
+# ── generic selectable menu ──────────────────────────────────────────
+
+
+def _selectable_menu(
+    items: list[str],
+    *,
+    title: str = "Menu",
+    allow_escape: bool = True,
+) -> int | None:
+    """Show a keyboard-navigated selectable list.
+
+    Returns the chosen index, or ``None`` if the user pressed Escape.
+    """
+    selected = 0
+    with Live(
+        _menu_renderable(items, selected, title=title),
+        console=console,
+        refresh_per_second=30,
+        screen=False,
+    ) as live:
+        while True:
+            key = _read_key()
+            if key == "up":
+                selected = (selected - 1) % len(items)
+            elif key == "down":
+                selected = (selected + 1) % len(items)
+            elif key == "enter":
+                return selected
+            elif key in ("escape", "quit") and allow_escape:
+                return None
+            live.update(
+                _menu_renderable(items, selected, title=title),
+            )
+
+
+def _description_menu(
+    items: list[str],
+    descriptions: list[str],
+    *,
+    title: str = "Menu",
+    detail_title: str = "Details",
+    allow_escape: bool = True,
+) -> int | None:
+    """Split-pane menu: list on the left, description on the right.
+
+    Returns the chosen index, or ``None`` on Escape.
+    """
+    selected = 0
+
+    def _render() -> Layout:
+        left = _menu_renderable(items, selected, title=title)
+        right = _description_panel(
+            descriptions[selected], title=detail_title,
+        )
+        return _split_layout(left, right)
+
+    with Live(
+        _render(),
+        console=console,
+        refresh_per_second=30,
+        screen=False,
+    ) as live:
+        while True:
+            key = _read_key()
+            if key == "up":
+                selected = (selected - 1) % len(items)
+            elif key == "down":
+                selected = (selected + 1) % len(items)
+            elif key == "enter":
+                return selected
+            elif key in ("escape", "quit") and allow_escape:
+                return None
+            live.update(_render())
+
+
+# ── welcome banner ───────────────────────────────────────────────────
+
+
+def _welcome_banner() -> Panel:
+    """Render the splash banner with logo and version string."""
+    logo = Text(_LOGO, style=f"bold {_PURPLE}")
+    subtitle = Text.assemble(
+        ("Motorola OTA Downloader", f"bold {_BLUE}"),
+        ("  v", _DIM),
+        (__version__, f"bold {_PURPLE}"),
+    )
+    hint = Text(
+        "↑/↓ Navigate  ·  Enter Select  ·  Esc Back  ·  q Quit",
+        style=_DIM,
+    )
+    body = Group(
+        Align.center(logo),
+        Align.center(subtitle),
+        Text(""),
+        Align.center(hint),
+    )
+    return Panel(body, border_style=_BLUE, padding=(0, 2))
+
+
+# ── config editing helpers ───────────────────────────────────────────
+
+
+def _edit_field(field_meta: dict, current_value: Any) -> Any:
+    """Show the appropriate editor for a config field.
+
+    For ``choice`` and ``carrier`` types a selectable TUI menu is used;
+    for ``bool`` the value is toggled immediately; ``int`` and ``text``
+    fall back to ``rich.prompt``.
     """
     ftype = field_meta["type"]
     label = field_meta["label"]
-    desc = field_meta["description"]
-
-    console.print(f"\n[bold]{label}[/]")
-    console.print(f"[dim]{desc}[/]")
-    console.print(f"Current value: [cyan]{current_value}[/]\n")
 
     # -- choice --------------------------------------------------------
     if ftype == "choice":
-        choices = field_meta["choices"]
-        for i, c in enumerate(choices, 1):
-            marker = "[green]>[/]" if c == str(current_value) else " "
-            console.print(f"  [bold]{i}.[/] {marker} {c}")
-        console.print(f"  [bold]{len(choices) + 1}.[/]   Keep current")
+        choices: list[str] = field_meta["choices"]
+        labels = [
+            f"{c}  ← current" if c == str(current_value) else c
+            for c in choices
+        ]
+        labels.append("Keep current")
+        pick = _selectable_menu(labels, title=f"Select {label}")
+        if pick is None or pick >= len(choices):
+            return current_value
+        return choices[pick]
 
-        pick = IntPrompt.ask(
-            "[bold]Select[/]",
-            default=len(choices) + 1,
-            choices=[str(i) for i in range(1, len(choices) + 2)],
-        )
-        if pick <= len(choices):
-            return choices[pick - 1]
-        return current_value
-
-    # -- carrier (special) ---------------------------------------------
+    # -- carrier -------------------------------------------------------
     if ftype == "carrier":
         available = open_carriers()
-        for i, c in enumerate(available, 1):
-            marker = "[green]>[/]" if c.code == current_value else " "
-            console.print(
-                f"  [bold]{i:>2}.[/] {marker} [cyan]{c.code:<10}[/] "
-                f"{c.name}  [dim]{c.region}[/]"
-            )
-        console.print(f"  [bold]{len(available) + 1:>2}.[/]   Enter custom code")
-        console.print(f"  [bold]{len(available) + 2:>2}.[/]   Keep current")
-
-        pick = IntPrompt.ask(
-            "[bold]Select[/]",
-            default=len(available) + 2,
-            choices=[str(i) for i in range(1, len(available) + 3)],
-        )
-        if pick <= len(available):
-            return available[pick - 1].code
-        if pick == len(available) + 1:
+        labels = [
+            f"{c.code:<10} {c.name}  ({c.region})"
+            + ("  ← current" if c.code == current_value else "")
+            for c in available
+        ]
+        labels.append("Enter custom code")
+        labels.append("Keep current")
+        pick = _selectable_menu(labels, title="Select Carrier")
+        if pick is None or pick == len(available) + 1:
+            return current_value
+        if pick == len(available):
             return Prompt.ask("[bold]Carrier code[/]")
-        return current_value
+        return available[pick].code
 
     # -- bool ----------------------------------------------------------
     if ftype == "bool":
-        return Confirm.ask(f"[bold]{label}[/]", default=bool(current_value))
+        cur = bool(current_value)
+        labels = [
+            f"True{'  ← current' if cur else ''}",
+            f"False{'  ← current' if not cur else ''}",
+        ]
+        pick = _selectable_menu(labels, title=f"Toggle {label}")
+        if pick is None:
+            return current_value
+        return pick == 0
 
     # -- int -----------------------------------------------------------
     if ftype == "int":
         lo = field_meta.get("min", 0)
         hi = field_meta.get("max", 999999)
         val = Prompt.ask(
-            f"[bold]Value[/] ({lo}-{hi})",
+            f"[bold]{label}[/] ({lo}–{hi})",
             default=str(current_value),
         )
         try:
-            num = int(val)
-            return max(lo, min(hi, num))
+            return max(lo, min(hi, int(val)))
         except ValueError:
-            console.print("[red]Invalid number, keeping current value.[/]")
+            console.print("[red]Invalid number – keeping current value.[/]")
             return current_value
 
-    # -- text (default) ------------------------------------------------
-    val = Prompt.ask("[bold]Value[/]", default=str(current_value))
-    return val
+    # -- text ----------------------------------------------------------
+    return Prompt.ask(f"[bold]{label}[/]", default=str(current_value))
 
 
-# -- config menus ------------------------------------------------------
+def _config_fields_labels(
+    fields: list[dict[str, Any]],
+    cfg: object,
+) -> tuple[list[str], list[str]]:
+    """Build display labels and descriptions for config field lists."""
+    labels: list[str] = []
+    descs: list[str] = []
+    for f in fields:
+        val = getattr(cfg, f["key"], "")
+        display_val = str(val) if val != "" else "(empty)"
+        labels.append(f"{f['label']:.<24} {display_val}")
+        descs.append(
+            f"{f['description']}\n\n"
+            f"Current value: {display_val}\n"
+            f"Type: {f['type']}"
+        )
+    return labels, descs
+
+
+def _edit_config_page(
+    title: str,
+    fields: list[dict[str, Any]],
+    cfg: object,
+    save_fn,
+) -> None:
+    """Interactive split-pane config editor."""
+    while True:
+        labels, descs = _config_fields_labels(fields, cfg)
+        labels += ["Save and go back", "Discard and go back"]
+        descs += [
+            "Persist all changes to disk.",
+            "Discard all changes made in this session.",
+        ]
+        pick = _description_menu(
+            labels,
+            descs,
+            title=title,
+            detail_title="Setting Info",
+        )
+        if pick is None or pick == len(fields) + 1:
+            return
+        if pick == len(fields):
+            path = save_fn(cfg)
+            console.print(f"\n[green]Saved to {path}[/]")
+            return
+        field_meta = fields[pick]
+        current = getattr(cfg, field_meta["key"])
+        new_val = _edit_field(field_meta, current)
+        setattr(cfg, field_meta["key"], new_val)
+        console.print(
+            f"  → [green]{field_meta['label']}[/] = [bold]{new_val}[/]",
+        )
+
+
+def _config_menu() -> None:
+    """Top-level configuration menu (also called from ``cli.py``)."""
+    items = [
+        "App Configuration",
+        "Device Configuration",
+        "Show current configs",
+        "Back to main menu",
+    ]
+    descs = [
+        f"Server, HTTP headers, timeouts, region.\n\nFile: {app_config_path()}",
+        f"GUID, carrier, device parameters.\n\nFile: {device_config_path()}",
+        "Display both configs side-by-side in a table.",
+        "Return to the main menu.",
+    ]
+    while True:
+        pick = _description_menu(
+            items, descs, title="Configuration", detail_title="Info",
+        )
+        if pick is None or pick == 3:
+            return
+        if pick == 0:
+            cfg = load_app_config()
+            _edit_config_page(
+                "App Configuration",
+                APP_CONFIG_FIELDS,
+                cfg,
+                save_app_config,
+            )
+        elif pick == 1:
+            cfg = load_device_config()
+            _edit_config_page(
+                "Device Configuration",
+                DEVICE_CONFIG_FIELDS,
+                cfg,
+                save_device_config,
+            )
+        elif pick == 2:
+            _show_both_configs()
+
+
+def _show_both_configs() -> None:
+    """Print both config tables."""
+    cfg_app = load_app_config()
+    cfg_dev = load_device_config()
+    _show_config_table("App Configuration", APP_CONFIG_FIELDS, cfg_app)
+    console.print()
+    _show_config_table("Device Configuration", DEVICE_CONFIG_FIELDS, cfg_dev)
+    console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+    _read_key()
 
 
 def _show_config_table(
     title: str,
-    fields: list[dict],
+    fields: list[dict[str, Any]],
     config_obj: object,
 ) -> None:
     """Display a table of current config values."""
-    table = Table(title=title, show_lines=True)
-    table.add_column("#", style="bold", width=4)
-    table.add_column("Setting", style="bold cyan", min_width=18)
+    table = Table(title=title, show_lines=True, border_style=_BLUE)
+    table.add_column("Setting", style=f"bold {_PURPLE}", min_width=18)
     table.add_column("Value", style="green", min_width=20)
-    table.add_column("Description", style="dim")
-
-    for i, f in enumerate(fields, 1):
+    table.add_column("Description", style=_DIM)
+    for f in fields:
         val = getattr(config_obj, f["key"], "")
         table.add_row(
-            str(i),
             f["label"],
             str(val) if val != "" else "[dim](empty)[/]",
             Text(f["description"]),
@@ -138,190 +444,118 @@ def _show_config_table(
     console.print(table)
 
 
-def _edit_app_config() -> None:
-    """Interactive editor for app configuration."""
-    cfg = load_app_config()
-
-    while True:
-        console.print()
-        _show_config_table("App Configuration", APP_CONFIG_FIELDS, cfg)
-
-        n = len(APP_CONFIG_FIELDS)
-        console.print(f"\n  [bold]{n + 1}.[/] Save and go back")
-        console.print(f"  [bold]{n + 2}.[/] Discard and go back")
-
-        pick = IntPrompt.ask(
-            "\n[bold]Edit setting[/]",
-            default=n + 1,
-            choices=[str(i) for i in range(1, n + 3)],
-        )
-
-        if pick == n + 1:
-            path = save_app_config(cfg)
-            console.print(f"\n[green]Saved to {path}[/]")
-            return
-        if pick == n + 2:
-            console.print("[yellow]Changes discarded.[/]")
-            return
-
-        field_meta = APP_CONFIG_FIELDS[pick - 1]
-        current = getattr(cfg, field_meta["key"])
-        new_val = _edit_field(field_meta, current)
-        setattr(cfg, field_meta["key"], new_val)
-        console.print(f"  -> [green]{field_meta['label']}[/] = [bold]{new_val}[/]")
+# ── operation helpers ────────────────────────────────────────────────
 
 
-def _edit_device_config() -> None:
-    """Interactive editor for device configuration."""
-    cfg = load_device_config()
-
-    while True:
-        console.print()
-        _show_config_table("Device Configuration", DEVICE_CONFIG_FIELDS, cfg)
-
-        n = len(DEVICE_CONFIG_FIELDS)
-        console.print(f"\n  [bold]{n + 1}.[/] Save and go back")
-        console.print(f"  [bold]{n + 2}.[/] Discard and go back")
-
-        pick = IntPrompt.ask(
-            "\n[bold]Edit setting[/]",
-            default=n + 1,
-            choices=[str(i) for i in range(1, n + 3)],
-        )
-
-        if pick == n + 1:
-            path = save_device_config(cfg)
-            console.print(f"\n[green]Saved to {path}[/]")
-            return
-        if pick == n + 2:
-            console.print("[yellow]Changes discarded.[/]")
-            return
-
-        field_meta = DEVICE_CONFIG_FIELDS[pick - 1]
-        current = getattr(cfg, field_meta["key"])
-        new_val = _edit_field(field_meta, current)
-        setattr(cfg, field_meta["key"], new_val)
-        console.print(f"  -> [green]{field_meta['label']}[/] = [bold]{new_val}[/]")
-
-
-def _config_menu() -> None:
-    """Top-level configuration menu."""
-    while True:
-        app_path = app_config_path()
-        dev_path = device_config_path()
-
-        console.print(
-            Panel(
-                f"[bold]Configuration Files[/]\n"
-                f"  App:    {app_path}\n"
-                f"  Device: {dev_path}",
-                title="Configuration",
-                border_style="blue",
-            )
-        )
-
-        console.print("  [bold]1.[/] App Configuration     [dim]-- Server, headers, timeouts, region[/]")
-        console.print("  [bold]2.[/] Device Configuration  [dim]-- GUID, carrier, device parameters[/]")
-        console.print("  [bold]3.[/] Show current configs  [dim]-- Display both configs side by side[/]")
-        console.print("  [bold]4.[/] Back to main menu")
-
-        pick = IntPrompt.ask(
-            "\n[bold]Choice[/]", default=4, choices=["1", "2", "3", "4"]
-        )
-
-        if pick == 1:
-            _edit_app_config()
-        elif pick == 2:
-            _edit_device_config()
-        elif pick == 3:
-            cfg_app = load_app_config()
-            cfg_dev = load_device_config()
-            _show_config_table("App Configuration", APP_CONFIG_FIELDS, cfg_app)
-            console.print()
-            _show_config_table("Device Configuration", DEVICE_CONFIG_FIELDS, cfg_dev)
-        else:
-            return
-
-
-# -- operation helpers -------------------------------------------------
-
-
-def _pick_server() -> ServerEnv:
-    """Interactive server selector."""
-    console.print("\n[bold]Select CDS server:[/]\n")
-    items = list(SERVERS.items())
-    for i, (env, srv) in enumerate(items, 1):
-        marker = "*" if "production" in env.value else " "
-        console.print(f"  [bold]{i}.[/] {marker} {srv.label}  [dim]{srv.host}[/]")
-    choice = IntPrompt.ask(
-        "\n[bold]Server[/]",
-        default=1,
-        choices=[str(i) for i in range(1, len(items) + 1)],
+def _pick_server() -> ServerEnv | None:
+    """Interactive server selector using selectable menu."""
+    items_list = list(SERVERS.items())
+    labels = [
+        f"{srv.label}  ({srv.host})" for _, srv in items_list
+    ]
+    descs = [srv.description for _, srv in items_list]
+    pick = _description_menu(
+        labels, descs, title="Select CDS Server", detail_title="Server Info",
     )
-    env = items[choice - 1][0]
-    console.print(f"  -> [green]{SERVERS[env].label}[/]\n")
-    return env
+    if pick is None:
+        return None
+    return items_list[pick][0]
 
 
-def _pick_carrier() -> str:
-    """Interactive carrier selector."""
-    console.print("[bold]Select carrier:[/]\n")
+def _pick_carrier() -> str | None:
+    """Interactive carrier selector using selectable menu."""
     available = open_carriers()
-    for i, c in enumerate(available, 1):
-        console.print(
-            f"  [bold]{i:>2}.[/] [cyan]{c.code:<10}[/] {c.name}  [dim]{c.region}[/]"
-        )
-    console.print(f"  [bold]{len(available) + 1:>2}.[/] [yellow]Custom...[/]")
-    choice = IntPrompt.ask(
-        "\n[bold]Carrier[/]",
-        default=1,
-        choices=[str(i) for i in range(1, len(available) + 2)],
+    labels = [
+        f"{c.code:<10} {c.name}  ({c.region})" for c in available
+    ]
+    labels.append("Custom…")
+    descs = [
+        f"Code: {c.code}\nName: {c.name}\nRegion: {c.region}\nStatus: {c.status}"
+        for c in available
+    ]
+    descs.append("Enter a custom carrier code manually.")
+    pick = _description_menu(
+        labels, descs, title="Select Carrier", detail_title="Carrier Info",
     )
-    if choice <= len(available):
-        carrier = available[choice - 1].code
-    else:
-        carrier = Prompt.ask("[bold]Enter carrier code[/]")
-    console.print(f"  -> [green]{carrier}[/]\n")
-    return carrier
+    if pick is None:
+        return None
+    if pick == len(available):
+        return Prompt.ask("[bold]Enter carrier code[/]")
+    return available[pick].code
 
 
 def _get_guid() -> str:
-    """Prompt for the device GUID."""
     return Prompt.ask("[bold]Device GUID[/] (ro.mot.build.guid)")
+
+
+def _get_guid_and_carrier() -> tuple[str, str, ServerEnv] | None:
+    """Ask for server, GUID, and carrier – or use saved device config.
+
+    Returns ``None`` if the user cancels at any step.
+    """
+    cfg_dev = load_device_config()
+    cfg_app = load_app_config()
+
+    has_saved = bool(cfg_dev.guid and cfg_dev.carrier)
+    if has_saved:
+        console.print(
+            f"\n[{_DIM}]Saved config: guid=[cyan]{cfg_dev.guid}[/] "
+            f"carrier=[green]{cfg_dev.carrier}[/] "
+            f"server=[{_BLUE}]{cfg_app.server}[/][/]",
+        )
+        if Confirm.ask("Use saved configuration?", default=True):
+            return cfg_dev.guid, cfg_dev.carrier, cfg_app.server_env
+
+    env = _pick_server()
+    if env is None:
+        return None
+    guid = _get_guid()
+    if not guid:
+        return None
+    carrier = _pick_carrier()
+    if carrier is None:
+        return None
+    return guid, carrier, env
+
+
+# ── result display ───────────────────────────────────────────────────
 
 
 def _show_update(resp) -> None:
     if resp.has_update:
-        panel = Panel(
+        body = (
             f"[bold green]Source :[/] {resp.source_version}\n"
             f"[bold green]Target :[/] {resp.target_version}\n"
             f"[bold green]Size   :[/] {resp.size_mb} MB\n"
             f"[bold green]Type   :[/] {resp.update_type}\n"
             f"[bold green]MD5    :[/] {resp.md5}\n"
-            f"[bold green]GUID   :[/] {resp.target_guid}",
-            title="Update Available",
-            border_style="green",
+            f"[bold green]GUID   :[/] {resp.target_guid}"
         )
+        panel = Panel(body, title="Update Available", border_style="green")
     else:
         cds = resp.x_cds_content_exists
-        panel = Panel(
+        body = (
             f"proceed = [bold]false[/]\n"
             f"x-cds-content-exists = [yellow]{cds}[/]\n"
-            f"poll after {resp.poll_after_seconds}s",
-            title="No Update",
-            border_style="yellow",
+            f"poll after {resp.poll_after_seconds}s"
         )
+        panel = Panel(body, title="No Update", border_style="yellow")
     console.print(panel)
+    console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+    _read_key()
 
 
 def _show_chain_table(chain) -> None:
-    table = Table(title=f"OTA Update Chain -- {len(chain)} step(s)")
-    table.add_column("#", style="bold", width=4)
+    table = Table(
+        title=f"OTA Update Chain — {len(chain)} step(s)",
+        border_style=_BLUE,
+    )
+    table.add_column("#", style=_BOLD, width=4)
     table.add_column("Source", style="cyan")
     table.add_column("Target", style="green")
     table.add_column("Size", justify="right")
     table.add_column("Type")
-    table.add_column("Target GUID", style="dim")
+    table.add_column("Target GUID", style=_DIM)
     for i, u in enumerate(chain, 1):
         table.add_row(
             str(i),
@@ -334,154 +568,178 @@ def _show_chain_table(chain) -> None:
     console.print(table)
     total = sum(u.size_mb for u in chain)
     console.print(
-        f"\n  [bold]Base :[/] {chain[0].source_version}  ->  "
-        f"[bold]Latest:[/] {chain[-1].target_version}  "
-        f"({total:.1f} MB total)"
+        f"\n  [{_BOLD}]Base :[/] {chain[0].source_version}  →  "
+        f"[{_BOLD}]Latest:[/] {chain[-1].target_version}  "
+        f"({total:.1f} MB total)",
     )
+    console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+    _read_key()
 
 
-def _get_guid_and_carrier() -> tuple[str, str, ServerEnv]:
-    """Ask for server, GUID, and carrier -- or use saved device config."""
-    cfg_dev = load_device_config()
-    cfg_app = load_app_config()
-
-    has_saved = bool(cfg_dev.guid and cfg_dev.carrier)
-    if has_saved:
-        console.print(
-            f"\n[dim]Saved config: guid=[cyan]{cfg_dev.guid}[/] "
-            f"carrier=[green]{cfg_dev.carrier}[/] "
-            f"server=[blue]{cfg_app.server}[/][/]"
-        )
-        if Confirm.ask("Use saved configuration?", default=True):
-            return cfg_dev.guid, cfg_dev.carrier, cfg_app.server_env
-
-    env = _pick_server()
-    guid = _get_guid()
-    carrier = _pick_carrier()
-    return guid, carrier, env
+# ── server / carrier list views ──────────────────────────────────────
 
 
-# -- main TUI loop -----------------------------------------------------
+def _show_servers() -> None:
+    table = Table(title="CDS Servers", border_style=_BLUE)
+    table.add_column("Name", style=_BOLD)
+    table.add_column("Host")
+    table.add_column("Description")
+    for env, srv in SERVERS.items():
+        style = "green" if "production" in env.value else _DIM
+        table.add_row(f"[{style}]{env.value}[/]", srv.host, srv.description)
+    console.print(table)
+    console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+    _read_key()
 
 
-def _main_menu() -> int:
-    """Show the main action menu and return the choice."""
-    console.print("\n[bold]What would you like to do?[/]\n")
-    options = [
-        ("Check for update", "Single OTA check for a GUID + carrier"),
-        ("Walk update chain", "Enumerate all updates to latest build"),
-        ("Download updates", "Download full chain to disk"),
-        ("List servers", "Show available CDS servers"),
-        ("List carriers", "Show known carrier codes"),
-        ("Configuration", "Edit app & device settings"),
-        ("Exit", ""),
-    ]
-    for i, (label, desc) in enumerate(options, 1):
-        if desc:
-            console.print(f"  [bold]{i}.[/] {label}  [dim]-- {desc}[/]")
-        else:
-            console.print(f"  [bold]{i}.[/] {label}")
+def _show_carriers() -> None:
+    table = Table(title="Known Carriers", border_style=_BLUE)
+    table.add_column("Code", style=f"bold {_PURPLE}")
+    table.add_column("Name")
+    table.add_column("Region")
+    table.add_column("Status")
+    for c in CARRIERS:
+        st = "green" if c.status == "open" else "yellow"
+        table.add_row(c.code, c.name, c.region, f"[{st}]{c.status}[/]")
+    console.print(table)
+    console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+    _read_key()
 
-    return IntPrompt.ask(
-        "\n[bold]Choice[/]",
-        default=1,
-        choices=[str(i) for i in range(1, len(options) + 1)],
-    )
+
+# ── main TUI loop ────────────────────────────────────────────────────
+
+_MAIN_ITEMS = [
+    "Check for update",
+    "Walk update chain",
+    "Download updates",
+    "List servers",
+    "List carriers",
+    "Configuration",
+    "Exit",
+]
+
+_MAIN_DESCS = [
+    "Perform a single OTA check for a GUID + carrier combination.\n\n"
+    "The server will respond with the next available update (if any).",
+    "Enumerate all incremental updates from a base GUID to the\n"
+    "latest available build, following the otaTargetSha1 chain.",
+    "Walk the full update chain and download every OTA zip\n"
+    "to a local directory, with MD5 verification.",
+    "Show all known CDS (Content Delivery Service) server\n"
+    "endpoints and their current status.",
+    "Display the full list of known carrier codes, their names,\n"
+    "regions, and whether they are open or whitelisted.",
+    "Edit application and device configuration files.\n\n"
+    "Settings include server, region, HTTP headers, timeouts,\n"
+    "GUID, carrier, and device metadata.",
+    "Quit the application.",
+]
 
 
 def run_tui() -> None:
     """Entry point for the interactive terminal UI."""
-    console.print(
-        Panel(
-            f"[bold]Motorola OTA Downloader[/]  v{__version__}\n"
-            "Download OTA updates from Motorola CDS servers\n\n"
-            "[dim]Use the menu below or run "
-            "moto-ota --help for CLI mode.[/dim]",
-            border_style="blue",
-        )
-    )
+    fd = sys.stdin.fileno()
+    original_attr = termios.tcgetattr(fd)
+    try:
+        _run_tui_inner()
+    except (KeyboardInterrupt, EOFError):
+        pass
+    finally:
+        # Always restore the terminal to a sane state.
+        termios.tcsetattr(fd, termios.TCSADRAIN, original_attr)
+        console.print(f"\n[bold {_PURPLE}]Goodbye![/]")
+
+
+def _run_tui_inner() -> None:
+    """Core TUI loop (wrapped by ``run_tui`` for terminal safety)."""
+    console.print(_welcome_banner())
 
     while True:
-        choice = _main_menu()
+        pick = _description_menu(
+            _MAIN_ITEMS,
+            _MAIN_DESCS,
+            title="Main Menu",
+            detail_title="Description",
+            allow_escape=False,
+        )
 
-        # -- 1. Check --------------------------------------------------
-        if choice == 1:
-            guid, carrier, env = _get_guid_and_carrier()
-            with console.status("[bold]Checking for update...[/]"):
+        # -- Check for update ------------------------------------------
+        if pick == 0:
+            result = _get_guid_and_carrier()
+            if result is None:
+                continue
+            guid, carrier, env = result
+            with console.status(f"[bold {_PURPLE}]Checking for update…[/]"):
                 with OTAClient(env) as client:
                     resp = client.check(guid, carrier)
             _show_update(resp)
 
-        # -- 2. Chain --------------------------------------------------
-        elif choice == 2:
-            guid, carrier, env = _get_guid_and_carrier()
-            with console.status("[bold]Walking update chain...[/]"):
+        # -- Walk update chain -----------------------------------------
+        elif pick == 1:
+            result = _get_guid_and_carrier()
+            if result is None:
+                continue
+            guid, carrier, env = result
+            with console.status(f"[bold {_PURPLE}]Walking update chain…[/]"):
                 with OTAClient(env) as client:
                     updates = client.walk_chain(guid, carrier)
             if updates:
                 _show_chain_table(updates)
             else:
                 console.print("[yellow]No updates found.[/]")
+                console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+                _read_key()
 
-        # -- 3. Download -----------------------------------------------
-        elif choice == 3:
-            guid, carrier, env = _get_guid_and_carrier()
+        # -- Download updates ------------------------------------------
+        elif pick == 2:
+            result = _get_guid_and_carrier()
+            if result is None:
+                continue
+            guid, carrier, env = result
             out = Prompt.ask("[bold]Output directory[/]", default="downloads")
             output_dir = Path(out)
-
-            with console.status("[bold]Enumerating chain...[/]"):
+            with console.status(f"[bold {_PURPLE}]Enumerating chain…[/]"):
                 with OTAClient(env) as client:
                     updates = client.walk_chain(guid, carrier)
-
             if not updates:
                 console.print("[yellow]No updates to download.[/]")
+                console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+                _read_key()
                 continue
-
             total = sum(u.size_mb for u in updates)
             console.print(
                 f"\n[bold]{len(updates)}[/] update(s), "
-                f"[bold]{total:.1f} MB[/] total\n"
+                f"[bold]{total:.1f} MB[/] total\n",
             )
             if not Confirm.ask("Start download?", default=True):
                 continue
-
             app_cfg = load_app_config()
             saved = download_chain(
-                updates, carrier, output_dir,
+                updates,
+                carrier,
+                output_dir,
                 verify=app_cfg.verify_md5,
             )
-            console.print(f"\n[bold green]Downloaded {len(saved)} file(s)[/] -> {output_dir}")
+            console.print(
+                f"\n[bold green]Downloaded {len(saved)} file(s)[/] → {output_dir}",
+            )
             for p in saved:
                 console.print(f"  {p.name}")
+            console.print(f"\n[{_DIM}]Press any key to continue…[/]")
+            _read_key()
 
-        # -- 4. Servers ------------------------------------------------
-        elif choice == 4:
-            table = Table(title="CDS Servers")
-            table.add_column("Name", style="bold")
-            table.add_column("Host")
-            table.add_column("Description")
-            for env, srv in SERVERS.items():
-                style = "green" if "production" in env.value else "dim"
-                table.add_row(f"[{style}]{env.value}[/]", srv.host, srv.description)
-            console.print(table)
+        # -- List servers ----------------------------------------------
+        elif pick == 3:
+            _show_servers()
 
-        # -- 5. Carriers -----------------------------------------------
-        elif choice == 5:
-            table = Table(title="Known Carriers")
-            table.add_column("Code", style="bold cyan")
-            table.add_column("Name")
-            table.add_column("Region")
-            table.add_column("Status")
-            for c in CARRIERS:
-                st = "green" if c.status == "open" else "yellow"
-                table.add_row(c.code, c.name, c.region, f"[{st}]{c.status}[/]")
-            console.print(table)
+        # -- List carriers ---------------------------------------------
+        elif pick == 4:
+            _show_carriers()
 
-        # -- 6. Configuration ------------------------------------------
-        elif choice == 6:
+        # -- Configuration ---------------------------------------------
+        elif pick == 5:
             _config_menu()
 
-        # -- 7. Exit ---------------------------------------------------
-        elif choice == 7:
-            console.print("[bold]Goodbye![/]")
+        # -- Exit ------------------------------------------------------
+        elif pick == 6:
             break
