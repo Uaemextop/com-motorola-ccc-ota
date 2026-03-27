@@ -23,7 +23,7 @@ máquina (bytes binarios) en instrucciones legibles en ensamblador.
 
 | Característica      | Detalle                                                 |
 |---------------------|---------------------------------------------------------|
-| **Versión**         | 5.0 (instalada: 5.0.7)                                 |
+| **Versión**         | 5.0.x (paquete pip: capstone)                           |
 | **Licencia**        | BSD                                                     |
 | **Lenguajes**       | C/C++ (núcleo), con bindings para Python, Java, Go, etc.|
 | **Arquitecturas**   | ARM, ARM64, x86, MIPS, PowerPC, SPARC, SystemZ, XCore   |
@@ -41,7 +41,7 @@ Verificación rápida:
 
 ```python
 import capstone
-print(capstone.cs_version())  # (5, 0, 1280)
+print(capstone.cs_version())  # (major, minor, combined)
 ```
 
 ---

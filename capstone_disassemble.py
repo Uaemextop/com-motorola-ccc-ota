@@ -28,6 +28,7 @@ except ImportError:
 # ── ELF constants ────────────────────────────────────────────────────────────
 
 ELF_MAGIC = b"\x7fELF"
+SHT_PROGBITS = 1
 
 # e_machine values → (CS_ARCH, CS_MODE) mapping
 ELF_MACHINE_MAP = {
@@ -63,7 +64,7 @@ MODE_NAMES = {
 # ── ELF parsing helpers ─────────────────────────────────────────────────────
 
 def _parse_elf_header(data: bytes):
-    """Return (arch, mode, endian, entry, section_headers_info) or None."""
+    """Parse ELF header and return a dict with arch/mode/section info, or None."""
     if data[:4] != ELF_MAGIC:
         return None
 
@@ -111,7 +112,7 @@ def _parse_elf_header(data: bytes):
 
 
 def _find_text_section(data: bytes, hdr: dict):
-    """Return (offset, size, vaddr) of .text section, or fallback to full code."""
+    """Return (offset, size, vaddr) of .text section, or (0, len(data), 0) if not found."""
     ei_class = hdr["ei_class"]
     endian   = hdr["endian"]
     shoff    = hdr["e_shoff"]
@@ -133,8 +134,7 @@ def _find_text_section(data: bytes, hdr: dict):
         sh_name_idx = struct.unpack_from(endian + "I", data, base)[0]
         sh_type     = struct.unpack_from(endian + "I", data, base + 4)[0]
 
-        # SHT_PROGBITS = 1
-        if sh_type != 1:
+        if sh_type != SHT_PROGBITS:
             continue
 
         # Read section name
