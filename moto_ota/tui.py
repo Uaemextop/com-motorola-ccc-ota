@@ -40,7 +40,6 @@ from rich.layout import Layout
 from rich.live import Live
 from rich.padding import Padding
 from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich.text import Text
 
@@ -178,7 +177,6 @@ def _read_key_win() -> str:
     """Blocking key read using msvcrt (Windows)."""
     ch = msvcrt.getwch()
     if ch in ("\x00", "\xe0"):
-        # Arrow keys / special keys come as two-char sequences
         ch2 = msvcrt.getwch()
         _map = {"H": "up", "P": "down", "K": "left", "M": "right"}
         return _map.get(ch2, "")
@@ -191,12 +189,41 @@ def _read_key_win() -> str:
     return ch
 
 
+def _read_key_raw_win() -> str:
+    """Blocking raw key read (Windows) — does NOT map 'q' to 'quit'.
+    Used for text input fields where all printable chars are needed.
+    Returns 'backspace' for backspace key.
+    """
+    ch = msvcrt.getwch()
+    if ch in ("\x00", "\xe0"):
+        ch2 = msvcrt.getwch()
+        _map = {"H": "up", "P": "down", "K": "left", "M": "right"}
+        return _map.get(ch2, "")
+    if ch == "\x1b":
+        return "escape"
+    if ch in ("\r", "\n"):
+        return "enter"
+    if ch in ("\x08", "\x7f"):
+        return "backspace"
+    return ch
+
+
 def _read_key_timeout_win(timeout: float = 0.12) -> str | None:
     """Non-blocking key read with timeout using msvcrt (Windows)."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if msvcrt.kbhit():
             return _read_key_win()
+        time.sleep(0.01)
+    return None
+
+
+def _read_key_raw_timeout_win(timeout: float = 0.12) -> str | None:
+    """Non-blocking raw key read with timeout (Windows)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if msvcrt.kbhit():
+            return _read_key_raw_win()
         time.sleep(0.01)
     return None
 
@@ -230,6 +257,35 @@ def _read_key_unix() -> str:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
+def _read_key_raw_unix() -> str:
+    """Blocking raw key read (Unix) — does NOT map 'q' to 'quit'.
+    Returns 'backspace' for backspace/delete key.
+    """
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ch = sys.stdin.read(1)
+        if ch == "\x1b":
+            if select.select([sys.stdin], [], [], 0.05)[0]:
+                ch2 = sys.stdin.read(1)
+                if ch2 == "[" and select.select([sys.stdin], [], [], 0.05)[0]:
+                    ch3 = sys.stdin.read(1)
+                    _map = {"A": "up", "B": "down", "C": "right", "D": "left"}
+                    if ch3 in _map:
+                        return _map[ch3]
+                    while select.select([sys.stdin], [], [], 0.02)[0]:
+                        sys.stdin.read(1)
+            return "escape"
+        if ch in ("\r", "\n"):
+            return "enter"
+        if ch in ("\x08", "\x7f"):
+            return "backspace"
+        return ch
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
 def _read_key_timeout_unix(timeout: float = 0.12) -> str | None:
     """Non-blocking key read with timeout using termios (Unix/macOS)."""
     fd = sys.stdin.fileno()
@@ -258,6 +314,43 @@ def _read_key_timeout_unix(timeout: float = 0.12) -> str | None:
         return ch
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def _read_key_raw_timeout_unix(timeout: float = 0.12) -> str | None:
+    """Non-blocking raw key read with timeout (Unix)."""
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        ready, _, _ = select.select([sys.stdin], [], [], timeout)
+        if not ready:
+            return None
+        ch = sys.stdin.read(1)
+        if ch == "\x1b":
+            if select.select([sys.stdin], [], [], 0.05)[0]:
+                ch2 = sys.stdin.read(1)
+                if ch2 == "[" and select.select([sys.stdin], [], [], 0.05)[0]:
+                    ch3 = sys.stdin.read(1)
+                    _map = {"A": "up", "B": "down", "C": "right", "D": "left"}
+                    if ch3 in _map:
+                        return _map[ch3]
+                    while select.select([sys.stdin], [], [], 0.02)[0]:
+                        sys.stdin.read(1)
+            return "escape"
+        if ch in ("\r", "\n"):
+            return "enter"
+        if ch in ("\x08", "\x7f"):
+            return "backspace"
+        return ch
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def _read_key_raw_timeout(timeout: float = 0.12) -> str | None:
+    """Non-blocking raw key read — all printable chars pass through."""
+    if _IS_WINDOWS:
+        return _read_key_raw_timeout_win(timeout)
+    return _read_key_raw_timeout_unix(timeout)
 
 
 # =====================================================================
@@ -332,6 +425,158 @@ def _description_box(text: str) -> Panel:
         box=box.ROUNDED,
         border_style=MUTED,
     )
+
+
+# =====================================================================
+#  Full-screen text input  (penumbra-style — stays in alternate buffer)
+# =====================================================================
+
+
+def _fullscreen_input(
+    label: str,
+    *,
+    default: str = "",
+    hint: str = "",
+) -> str | None:
+    """Full-screen single-line text input with animated starfield.
+
+    Returns the entered string, or ``None`` on Escape.
+    """
+    buf = list(default)
+
+    def _render() -> RenderableType:
+        w = console.width or 100
+        # Input field display
+        cursor_text = Text()
+        cursor_text.append("".join(buf), style=f"bold {TEXT}")
+        cursor_text.append("_", style=f"blink bold {ACCENT}")
+
+        input_panel = Panel(
+            Padding(cursor_text, (0, 1)),
+            title=f"[bold {ACCENT}] {label} [/]",
+            box=box.ROUNDED,
+            border_style=ACCENT2,
+            width=min(60, w - 10),
+        )
+
+        parts: list[RenderableType] = [input_panel]
+
+        if hint:
+            parts.append(Text(f"\n{hint}", style=MUTED, justify="center"))
+
+        footer_text = Text.assemble(
+            ("  [", MUTED),
+            ("Enter", f"bold {TEXT}"),
+            ("] ", MUTED),
+            ("Confirm", MUTED),
+            ("    ", ""),
+            ("[", MUTED),
+            ("Esc", f"bold {TEXT}"),
+            ("] ", MUTED),
+            ("Cancel", MUTED),
+        )
+        footer = Align.center(footer_text)
+        stars = _star_block(w, 1)
+
+        lay = Layout()
+        lay.split_column(
+            Layout(name="stars", size=1),
+            Layout(name="content", ratio=1),
+            Layout(name="footer", size=2),
+        )
+        lay["stars"].update(stars)
+        lay["content"].update(Align.center(
+            Group(*parts), vertical="middle",
+        ))
+        lay["footer"].update(footer)
+        return lay
+
+    with Live(
+        _render(),
+        console=console,
+        screen=True,
+        refresh_per_second=8,
+    ) as live:
+        while True:
+            key = _read_key_raw_timeout(0.15)
+            if key is None:
+                live.update(_render())
+                continue
+            if key == "enter":
+                return "".join(buf)
+            elif key == "escape":
+                return None
+            elif key == "backspace":
+                if buf:
+                    buf.pop()
+            elif len(key) == 1 and key.isprintable():
+                buf.append(key)
+            live.update(_render())
+
+
+def _fullscreen_confirm(
+    message: str,
+    *,
+    default: bool = True,
+) -> bool:
+    """Full-screen yes/no confirmation with animated starfield."""
+    selected = 0 if default else 1
+    options = ["Yes", "No"]
+
+    def _render() -> RenderableType:
+        w = console.width or 100
+        msg = Text(message, style=f"bold {TEXT}", justify="center")
+
+        choice_text = Text()
+        for i, opt in enumerate(options):
+            if i == selected:
+                choice_text.append(f"  >> {opt}  ", style=f"bold {ACCENT}")
+            else:
+                choice_text.append(f"     {opt}  ", style=MUTED)
+
+        panel = Panel(
+            Padding(Group(
+                Align.center(msg),
+                Text(""),
+                Align.center(choice_text),
+            ), (1, 2)),
+            box=box.ROUNDED,
+            border_style=ACCENT2,
+            width=min(50, w - 10),
+        )
+
+        footer = Align.center(_footer_bar())
+        stars = _star_block(w, 1)
+
+        lay = Layout()
+        lay.split_column(
+            Layout(name="stars", size=1),
+            Layout(name="content", ratio=1),
+            Layout(name="footer", size=2),
+        )
+        lay["stars"].update(stars)
+        lay["content"].update(Align.center(panel, vertical="middle"))
+        lay["footer"].update(footer)
+        return lay
+
+    with Live(
+        _render(),
+        console=console,
+        screen=True,
+        refresh_per_second=8,
+    ) as live:
+        while True:
+            key = _read_key_timeout(0.15)
+            if key is None:
+                live.update(_render())
+                continue
+            if key in ("left", "right", "up", "down"):
+                selected = 1 - selected
+            elif key == "enter":
+                return selected == 0
+            elif key in ("escape", "quit"):
+                return not default
+            live.update(_render())
 
 
 # =====================================================================
@@ -552,7 +797,8 @@ def _edit_field(field_meta: dict, current_value: Any) -> Any:
         if pick is None or pick == len(available) + 1:
             return current_value
         if pick == len(available):
-            return Prompt.ask("[bold]Carrier code[/]")
+            result = _fullscreen_input("Carrier code")
+            return result if result else current_value
         return available[pick].code
 
     # -- bool ----------------------------------------------------------
@@ -571,18 +817,20 @@ def _edit_field(field_meta: dict, current_value: Any) -> Any:
     if ftype == "int":
         lo = field_meta.get("min", 0)
         hi = field_meta.get("max", 999999)
-        val = Prompt.ask(
-            f"[bold]{label}[/] ({lo}-{hi})",
+        val = _fullscreen_input(
+            f"{label} ({lo}-{hi})",
             default=str(current_value),
         )
+        if val is None:
+            return current_value
         try:
             return max(lo, min(hi, int(val)))
         except ValueError:
-            console.print("[red]Invalid number -- keeping current value.[/]")
             return current_value
 
     # -- text ----------------------------------------------------------
-    return Prompt.ask(f"[bold]{label}[/]", default=str(current_value))
+    result = _fullscreen_input(label, default=str(current_value))
+    return result if result is not None else current_value
 
 
 def _config_fields_labels(
@@ -739,12 +987,16 @@ def _pick_carrier() -> str | None:
     if pick is None:
         return None
     if pick == len(available):
-        return Prompt.ask("[bold]Enter carrier code[/]")
+        result = _fullscreen_input("Carrier code")
+        return result if result else None
     return available[pick].code
 
 
-def _get_guid() -> str:
-    return Prompt.ask("[bold]Device GUID[/] (ro.mot.build.guid)")
+def _get_guid() -> str | None:
+    return _fullscreen_input(
+        "Device GUID",
+        hint="ro.mot.build.guid  (16-char hex string)",
+    )
 
 
 def _get_guid_and_carrier() -> tuple[str, str, ServerEnv] | None:
@@ -754,12 +1006,13 @@ def _get_guid_and_carrier() -> tuple[str, str, ServerEnv] | None:
 
     has_saved = bool(cfg_dev.guid and cfg_dev.carrier)
     if has_saved:
-        console.print(
-            f"\n[{MUTED}]Saved config: guid=[{ACCENT}]{cfg_dev.guid}[/] "
-            f"carrier=[{SUCCESS}]{cfg_dev.carrier}[/] "
-            f"server=[{INFO}]{cfg_app.server}[/][/]",
+        msg = (
+            f"Use saved config?\n\n"
+            f"GUID:    {cfg_dev.guid}\n"
+            f"Carrier: {cfg_dev.carrier}\n"
+            f"Server:  {cfg_app.server}"
         )
-        if Confirm.ask("Use saved configuration?", default=True):
+        if _fullscreen_confirm(msg, default=True):
             return cfg_dev.guid, cfg_dev.carrier, cfg_app.server_env
 
     env = _pick_server()
@@ -959,7 +1212,9 @@ def _run_tui_inner() -> None:
             if result is None:
                 continue
             guid, carrier, env = result
-            out = Prompt.ask("[bold]Output directory[/]", default="downloads")
+            out = _fullscreen_input("Output directory", default="downloads")
+            if out is None:
+                continue
             output_dir = Path(out)
             with console.status(f"[bold {ACCENT}]Enumerating chain...[/]"):
                 with OTAClient(env) as client:
@@ -970,11 +1225,10 @@ def _run_tui_inner() -> None:
                 _read_key()
                 continue
             total = sum(u.size_mb for u in updates)
-            console.print(
-                f"\n[bold]{len(updates)}[/] update(s), "
-                f"[bold]{total:.1f} MB[/] total\n",
-            )
-            if not Confirm.ask("Start download?", default=True):
+            if not _fullscreen_confirm(
+                f"Download {len(updates)} file(s), {total:.1f} MB total?",
+                default=True,
+            ):
                 continue
             app_cfg = load_app_config()
             saved = download_chain(
