@@ -12,11 +12,13 @@ import json
 import logging
 import re
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
 from ota_analyzer.analysis import BinaryAnalyzer, SmaliParser
 from ota_analyzer.client import OTAClient
-from ota_analyzer.config import Environment, Region
+from ota_analyzer.config import Environment, Region, get_server
 from ota_analyzer.models import CheckRequest, DeviceInfo, ExtraInfo, IdentityInfo
 
 
@@ -38,6 +40,16 @@ def _parse_fingerprint(fp: str) -> dict[str, str]:
     if not m:
         return {}
     return m.groupdict()
+
+
+def _extract_incremental_from_pkg(package_id: str) -> str:
+    """Try to extract the target incremental version from a packageID.
+
+    Package names follow the pattern:
+      delta-Ota_Version_<product>_<srcBuild>_<srcInc>-<dstBuild>_<dstInc>_<tags>.zip.<md5>
+    """
+    m = re.search(r"-[^_]+_([0-9a-f]{6,})_release-keys", package_id)
+    return m.group(1) if m else "unknown"
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -90,6 +102,39 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Server environment",
     )
 
+    # -- enumerate-updates -------------------------------------------------
+    enum = sub.add_parser(
+        "enumerate-updates",
+        help="Enumerate all OTA updates from a starting build to the latest",
+    )
+    enum.add_argument("--model", required=True, help="Device model (ro.product.model)")
+    enum.add_argument("--fingerprint", required=True, help="Build fingerprint (ro.build.fingerprint)")
+    enum.add_argument("--guid", required=True, help="Device GUID (ro.mot.build.guid) — starting point")
+    enum.add_argument("--serial", default="ZY32LNRW97", help="Device serial number")
+    enum.add_argument("--imei", default="IMEI_NOT_AVAILABLE", help="Primary IMEI")
+    enum.add_argument("--mccmnc", default="MCCMNC_NOT_AVAILABLE", help="Primary MCC+MNC")
+    enum.add_argument("--carrier", default="", help="Carrier name")
+    enum.add_argument("--hardware", default="", help="Hardware platform (Build.HARDWARE)")
+    enum.add_argument("--bootloader", default="", help="Bootloader version")
+    enum.add_argument("--radio", default="", help="Radio version")
+    enum.add_argument("--language", default="es-MX", help="Device locale")
+    enum.add_argument("--max-steps", type=int, default=50, help="Maximum chain steps")
+    enum.add_argument("--delay", type=float, default=1.0, help="Delay between requests (seconds)")
+    enum.add_argument("--output", default="", help="Save results to JSON file")
+    enum.add_argument("--show-urls", action="store_true", help="Include download URLs in output")
+    enum.add_argument(
+        "--region",
+        choices=["global", "prc"],
+        default="prc",
+        help="Server region",
+    )
+    enum.add_argument(
+        "--env",
+        choices=["production", "staging", "qa", "development"],
+        default="production",
+        help="Server environment",
+    )
+
     # -- analyze-smali -----------------------------------------------------
     sml = sub.add_parser("analyze-smali", help="Analyze smali bytecode")
     sml.add_argument("path", help="Path to smali directory")
@@ -129,6 +174,30 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--auth-patterns",
         action="store_true",
         help="Search for authentication-related strings",
+    )
+
+    # -- debug-server ------------------------------------------------------
+    dbg = sub.add_parser(
+        "debug-server",
+        help="Debug CDS server endpoints with curl-equivalent requests",
+    )
+    dbg.add_argument("--guid", required=True, help="Device GUID (ro.mot.build.guid)")
+    dbg.add_argument("--model", default="moto g05", help="Device model")
+    dbg.add_argument("--fingerprint", default="", help="Build fingerprint")
+    dbg.add_argument("--serial", default="ZY32LNRW97", help="Device serial number")
+    dbg.add_argument("--imei", default="IMEI_NOT_AVAILABLE", help="IMEI")
+    dbg.add_argument("--mccmnc", default="MCCMNC_NOT_AVAILABLE", help="MCC+MNC")
+    dbg.add_argument(
+        "--region",
+        choices=["global", "prc"],
+        default="prc",
+        help="Server region",
+    )
+    dbg.add_argument(
+        "--env",
+        choices=["production", "staging", "qa", "development"],
+        default="production",
+        help="Server environment",
     )
 
     # -- common options ----------------------------------------------------
@@ -313,6 +382,443 @@ def _cmd_analyze_binary(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_enumerate_updates(args: argparse.Namespace) -> int:
+    """Walk the OTA update chain from a starting build to the latest.
+
+    The CDS server routes updates by the GUID (``ro.mot.build.guid``):
+    each response contains ``otaTargetSha1`` which is the GUID of the
+    *next* build.  By feeding that back as the new context key we can
+    enumerate every delta OTA available for the device.
+
+    The ``minVersion`` / ``flavour`` fields in the first response confirm
+    the factory (base) build — no earlier OTAs exist before that version.
+    """
+    region = Region.PRC if args.region == "prc" else Region.GLOBAL
+    environment = Environment(args.env)
+
+    fp_fields = _parse_fingerprint(args.fingerprint) if args.fingerprint else {}
+    build_id = fp_fields.get("buildId", "")
+    os_version = fp_fields.get("osVersion", "15")
+    device = fp_fields.get("device", "")
+    fp_product = fp_fields.get("product", "")
+    brand = fp_fields.get("brand", "motorola")
+    incremental = fp_fields.get("incremental", "")
+    build_type = fp_fields.get("type", "user")
+    build_tags = fp_fields.get("tags", "release-keys")
+
+    current_guid = args.guid
+    current_build = build_id
+    current_inc = incremental
+    content_ts = 0
+    chain: list[dict[str, Any]] = []
+
+    print("=" * 70)
+    print("  Motorola OTA Update Chain Enumerator")
+    print("=" * 70)
+    print(f"  Device       : {args.model}")
+    print(f"  Fingerprint  : {args.fingerprint}")
+    print(f"  Starting GUID: {args.guid}")
+    print(f"  Server       : {environment.value} ({region.value})")
+    print(f"  Max steps    : {args.max_steps}")
+    print("=" * 70)
+    print()
+
+    with OTAClient.create(region=region, environment=environment) as client:
+        for step in range(args.max_steps):
+            request = CheckRequest(
+                request_id=args.serial,
+                device_info=DeviceInfo(
+                    manufacturer="motorola",
+                    hardware=args.hardware,
+                    brand=brand,
+                    model=args.model,
+                    product="",
+                    os="Linux:null:null",
+                    os_version=os_version,
+                    region="US",
+                    language=args.language.split("-")[0] if "-" in args.language else args.language,
+                    user_language=args.language.replace("-", "_"),
+                ),
+                extra_info=ExtraInfo(
+                    carrier=args.carrier,
+                    bootloader_version=args.bootloader,
+                    brand=brand,
+                    model=args.model,
+                    fingerprint=f"motorola/{fp_product}/{device}:{os_version}/{current_build}/{current_inc}:{build_type}/{build_tags}",
+                    radio_version=args.radio,
+                    build_tags=build_tags,
+                    build_type=build_type,
+                    build_device=device,
+                    build_id=current_build,
+                    build_display_id=current_build,
+                    build_incremental_version=current_inc,
+                    release_version=os_version,
+                    ota_source_sha1=current_guid,
+                    network="WIFI",
+                    apk_version=3500094,
+                    imei=args.imei,
+                    mccmnc=args.mccmnc,
+                    ro_virtual_ab_enabled=True,
+                ),
+                identity_info=IdentityInfo(serial_number=args.serial),
+                content_timestamp=content_ts,
+                context_key=current_guid,
+            )
+
+            try:
+                response = client.check_update(request)
+            except ConnectionError as exc:
+                print(f"  ❌ Step {step+1}: Connection failed: {exc}")
+                break
+
+            if not response.has_update:
+                print(f"  Step {step+1}: END — no more updates")
+                break
+
+            c = response.content or {}
+            resources = (response.raw or {}).get("contentResources", [])
+            dl_urls = [r.get("url", "") for r in resources if r.get("url")]
+
+            target_inc = _extract_incremental_from_pkg(c.get("packageID", ""))
+
+            entry: dict[str, Any] = {
+                "step": step + 1,
+                "source_version": c.get("sourceDisplayVersion", "?"),
+                "target_version": c.get("displayVersion", "?"),
+                "source_sha1": c.get("otaSourceSha1", "?"),
+                "target_sha1": c.get("otaTargetSha1", "?"),
+                "size_bytes": int(c.get("size", 0)),
+                "size_mb": round(int(c.get("size", 0)) / (1024 * 1024), 1),
+                "package_id": c.get("packageID", ""),
+                "md5": c.get("md5_checksum", ""),
+                "source_build_timestamp": c.get("sourceBuildTimestamp", 0),
+                "target_build_timestamp": c.get("targetBuildTimestamp", 0),
+                "min_version": c.get("minVersion", ""),
+                "flavour": c.get("flavour", ""),
+                "update_type": c.get("updateType", ""),
+                "ab_install_type": c.get("abInstallType", ""),
+                "download_urls": dl_urls,
+            }
+            chain.append(entry)
+
+            print(f"  Step {step+1}: {entry['source_version']} → {entry['target_version']}")
+            print(f"    GUID : {entry['source_sha1']} → {entry['target_sha1']}")
+            print(f"    Size : {entry['size_mb']} MB | Type: {entry['update_type']}")
+            if dl_urls:
+                print(f"    URLs : {len(dl_urls)} download link(s)")
+
+            # Advance to next build in chain
+            current_guid = entry["target_sha1"]
+            current_build = entry["target_version"]
+            current_inc = target_inc
+            content_ts = response.content_timestamp
+
+            if args.delay > 0:
+                time.sleep(args.delay)
+
+    # -- Summary -----------------------------------------------------------
+    print()
+    print("=" * 70)
+    print(f"  CHAIN SUMMARY: {len(chain)} OTA update(s)")
+    print("=" * 70)
+    if chain:
+        print()
+        print(f"  {'#':<3} {'Source':<24} {'Target':<24} {'Size':>10} {'Type':<5}")
+        print(f"  {'─'*3} {'─'*24} {'─'*24} {'─'*10} {'─'*5}")
+        for e in chain:
+            print(
+                f"  {e['step']:<3} {e['source_version']:<24} "
+                f"{e['target_version']:<24} {e['size_mb']:>7.1f} MB "
+                f"{e['update_type']:<5}"
+            )
+        print()
+        print(f"  Base (factory) build : {chain[0]['source_version']}"
+              f" (GUID: {chain[0]['source_sha1']})")
+        print(f"  Latest build         : {chain[-1]['target_version']}"
+              f" (GUID: {chain[-1]['target_sha1']})")
+        total_mb = sum(e["size_mb"] for e in chain)
+        print(f"  Total delta size     : {total_mb:.1f} MB")
+    print()
+
+    # -- Save to file ------------------------------------------------------
+    if args.output:
+        result = {
+            "device": {
+                "model": args.model,
+                "codename": device,
+                "product": fp_product,
+                "hardware": args.hardware,
+                "fingerprint": args.fingerprint,
+            },
+            "server": {
+                "region": region.value,
+                "environment": environment.value,
+            },
+            "base_version": chain[0]["source_version"] if chain else "",
+            "base_guid": chain[0]["source_sha1"] if chain else "",
+            "latest_version": chain[-1]["target_version"] if chain else "",
+            "latest_guid": chain[-1]["target_sha1"] if chain else "",
+            "total_updates": len(chain),
+            "chain": chain,
+        }
+        out_path = Path(args.output)
+        out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False))
+        print(f"  Saved to: {out_path}")
+
+    return 0
+
+
+def _cmd_debug_server(args: argparse.Namespace) -> int:
+    """Probe every known CDS endpoint and report what each one does.
+
+    This is the programmatic equivalent of debugging the API with ``curl``.
+    It tests: check (GET/POST), resources, state, versions, API v2,
+    download URLs, and every known server.
+    """
+    import requests as _requests
+
+    region = Region.PRC if args.region == "prc" else Region.GLOBAL
+    environment = Environment(args.env)
+    server = get_server(region, environment)
+    host = server.host
+    guid = args.guid
+
+    fp_fields = _parse_fingerprint(args.fingerprint) if args.fingerprint else {}
+    build_id = fp_fields.get("buildId", "UNKNOWN")
+    incremental = fp_fields.get("incremental", "000000")
+
+    headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "User-Agent": f"Dalvik/2.1.0 (Linux; U; Android 15; {args.model} Build/{build_id})",
+        "Connection": "Keep-Alive",
+        "Accept-Encoding": "gzip",
+    }
+
+    check_payload: dict[str, Any] = {
+        "id": args.serial,
+        "contentTimestamp": 0,
+        "deviceInfo": {"manufacturer": "motorola", "hardware": "",
+                       "brand": "motorola", "model": args.model, "product": "",
+                       "os": "Linux:null:null",
+                       "osVersion": fp_fields.get("osVersion", "15"),
+                       "country": "", "region": "US", "language": "en",
+                       "userLanguage": "es_US"},
+        "extraInfo": {
+            "clientIdentity": "motorola-ota-client-app",
+            "carrier": "", "brand": "motorola", "model": args.model,
+            "otaSourceSha1": guid, "buildId": build_id,
+            "buildDisplayId": build_id,
+            "fingerprint": args.fingerprint,
+            "buildDevice": fp_fields.get("device", ""),
+            "buildIncrementalVersion": incremental,
+            "buildTags": "release-keys", "buildType": "user",
+            "releaseVersion": fp_fields.get("osVersion", "15"),
+            "network": "WIFI", "apkVersion": 3500094,
+            "provisionedTime": 0, "incrementalVersion": 0,
+            "additionalInfo": "", "userLocation": "Non-CN",
+            "bootloaderStatus": "not-applicable", "deviceRooted": "false",
+            "is4GBRam": False, "deviceChipset": "Others",
+            "imei": args.imei, "mccmnc": args.mccmnc,
+            "imei2": "IMEI_NOT_AVAILABLE", "mccmnc2": "MCCMNC_NOT_AVAILABLE",
+            "ro.virtual_ab.enabled": True,
+            "vitalUpdate": False, "clientState": "IDLE",
+            "userTriggerLaunchPoint": "settingsCheckUpdate",
+        },
+        "identityInfo": {"serialNumber": args.serial},
+        "triggeredBy": "user",
+        "idType": "serialNumber",
+    }
+
+    def _safe(method: str, url: str, **kw: Any) -> tuple[int, Any, dict]:
+        kw.setdefault("timeout", 15)
+        r = getattr(_requests, method)(url, **kw)
+        try:
+            return r.status_code, r.json(), dict(r.headers)
+        except Exception:
+            return r.status_code, r.text[:300], dict(r.headers)
+
+    print("=" * 72)
+    print("  CDS Server Endpoint Debugger")
+    print("=" * 72)
+    print(f"  Server : {host}")
+    print(f"  GUID   : {guid}")
+    print(f"  Model  : {args.model}")
+    print("=" * 72)
+
+    # -- 1. check: GET (should be 405) ------------------------------------
+    print("\n── 1. GET /check ──")
+    url = f"https://{host}/cds/upgrade/1/check/ctx/ota/key/{guid}"
+    s, b, h = _safe("get", url, headers=headers)
+    print(f"   {s}  allow={h.get('allow', '?')}")
+    print(f"   → POST-only endpoint" if s == 405 else f"   → {str(b)[:120]}")
+
+    # -- 2. check: POST empty body ----------------------------------------
+    print("\n── 2. POST /check (empty body) ──")
+    s, b, _ = _safe("post", url, json={}, headers=headers)
+    print(f"   {s}  → {str(b)[:120]}")
+
+    # -- 3. check: POST full payload ---------------------------------------
+    print("\n── 3. POST /check (full payload) ──")
+    s, b, h = _safe("post", url, json=check_payload, headers=headers)
+    tracking_id = ""
+    content_ts = 0
+    if isinstance(b, dict):
+        tracking_id = b.get("trackingId") or ""
+        content_ts = b.get("contentTimestamp", 0)
+        proceed = b.get("proceed")
+        has_content = b.get("content") is not None
+        print(f"   {s}  proceed={proceed}  content={'YES' if has_content else 'no'}")
+        print(f"   x-cds-content-exists: {h.get('x-cds-content-exists', '?')}")
+        if has_content:
+            c = b["content"]
+            print(f"   update : {c.get('sourceDisplayVersion')} → {c.get('displayVersion')}")
+            print(f"   size   : {c.get('size')} bytes")
+            print(f"   type   : {c.get('updateType')} ({c.get('abInstallType')})")
+            print(f"   md5    : {c.get('md5_checksum')}")
+        resources = b.get("contentResources") or []
+        if resources:
+            print(f"   download URLs: {len(resources)}")
+            for r in resources[:2]:
+                print(f"     tags={r.get('tags')} ttl={r.get('urlTtlSeconds')}s")
+                print(f"     url={r.get('url', '')[:100]}...")
+        if tracking_id:
+            print(f"   trackingId: {tracking_id[:60]}...")
+    else:
+        print(f"   {s}  → {str(b)[:120]}")
+
+    # -- 4. resources: POST ------------------------------------------------
+    if tracking_id:
+        print("\n── 4. POST /resources ──")
+        url_res = f"https://{host}/cds/upgrade/1/resources/t/{tracking_id}/ctx/ota/key/{guid}"
+        minimal_body = {"id": args.serial, "identityInfo": {"serialNumber": args.serial}, "idType": "serialNumber"}
+        s, b, _ = _safe("post", url_res, json=minimal_body, headers=headers)
+        if isinstance(b, dict):
+            cr = b.get("contentResources", [])
+            print(f"   {s}  proceed={b.get('proceed')}  resources={len(cr)}")
+            print(f"   → Returns fresh download URLs for the tracking ID")
+        else:
+            print(f"   {s}  → {str(b)[:120]}")
+
+    # -- 5. state: POST ----------------------------------------------------
+    if tracking_id:
+        print("\n── 5. POST /state (various states) ──")
+        state_body: dict[str, Any] = dict(check_payload)
+        state_body["contentTimestamp"] = content_ts
+        state_body["status"] = "PROCESSING:OTHER"
+        state_body["reportingTags"] = "TRIGGER-USER"
+        state_body["upgradeSource"] = "UPGRADED_VIA_PULL"
+        for state in ["Notified", "Downloading", "Downloaded",
+                       "Installing", "Installed", "Failed"]:
+            url_st = f"https://{host}/cds/upgrade/1/state/t/{tracking_id}/s/{state}/ctx/ota/key/{guid}"
+            s, b, _ = _safe("post", url_st, json=state_body, headers=headers)
+            if isinstance(b, dict):
+                print(f"   s={state:<14} {s} proceed={b.get('proceed')}"
+                      f" poll={b.get('pollAfterSeconds', '')}")
+            else:
+                print(f"   s={state:<14} {s}")
+            time.sleep(0.2)
+        print("   → Reports OTA install progress back to the server")
+
+    # -- 6. versions: GET -------------------------------------------------
+    print("\n── 6. GET /versions ──")
+    url_ver = f"https://{host}/cds/upgrade/1/versions/ctx/ota/key/{guid}"
+    s, b, _ = _safe("get", url_ver, headers=headers)
+    if isinstance(b, dict):
+        print(f"   {s}  appId={b.get('applicationId')}")
+        print(f"   environment={b.get('environment')}")
+        print(f"   version={b.get('applicationVersion', '')[:40]}")
+        print(f"   engine={b.get('version', '')}")
+    else:
+        print(f"   {s}  → {str(b)[:120]}")
+
+    # -- 7. API v2 check ---------------------------------------------------
+    print("\n── 7. POST /cds/upgrade/2/check (API v2) ──")
+    url_v2 = f"https://{host}/cds/upgrade/2/check/ctx/ota/key/{guid}"
+    s, b, _ = _safe("post", url_v2, json=check_payload, headers=headers)
+    if isinstance(b, dict):
+        print(f"   {s}  proceed={b.get('proceed')}")
+        if b.get("content"):
+            print(f"   → Same results as v1 (identical response schema)")
+    else:
+        print(f"   {s}  → {str(b)[:120]}")
+
+    # -- 8. Download URL test ----------------------------------------------
+    if isinstance(b, dict) or tracking_id:
+        print("\n── 8. Download URL test ──")
+        # Re-fetch to get fresh URLs
+        s2, b2, _ = _safe("post", f"https://{host}/cds/upgrade/1/check/ctx/ota/key/{guid}",
+                           json=check_payload, headers=headers)
+        if isinstance(b2, dict) and b2.get("contentResources"):
+            dl_url = b2["contentResources"][0]["url"]
+            print(f"   URL: {dl_url[:100]}...")
+            try:
+                r = _requests.head(dl_url, timeout=15, allow_redirects=True)
+                size = r.headers.get("Content-Length", "?")
+                ctype = r.headers.get("Content-Type", "?")
+                print(f"   HEAD → {r.status_code}")
+                print(f"   Content-Length: {size}")
+                print(f"   Content-Type: {ctype}")
+            except Exception as exc:
+                print(f"   HEAD error: {exc}")
+            try:
+                r = _requests.get(dl_url, timeout=15,
+                                  headers={"Range": "bytes=0-3"}, stream=True)
+                magic = r.content[:4]
+                if magic[:2] == b"PK":
+                    fmt = "ZIP"
+                elif magic == b"CrAU":
+                    fmt = "Chrome OS update payload"
+                else:
+                    fmt = f"unknown ({magic.hex()})"
+                print(f"   Format: {fmt}")
+            except Exception as exc:
+                print(f"   Range GET error: {exc}")
+
+    # -- 9. All servers comparison -----------------------------------------
+    print("\n── 9. All production servers ──")
+    all_servers = [
+        ("appspot.com", "moto-cds.appspot.com"),
+        ("svcmot.cn", "moto-cds.svcmot.cn"),
+        ("staging", "moto-cds-staging.appspot.com"),
+        ("dev", "moto-cds-dev.appspot.com"),
+    ]
+    for label, srv in all_servers:
+        url_v = f"https://{srv}/cds/upgrade/1/versions/ctx/ota/key/{guid}"
+        try:
+            s, b, _ = _safe("get", url_v, headers=headers)
+            if isinstance(b, dict):
+                print(f"   {label:<14} appId={b.get('applicationId')}"
+                      f" env={b.get('environment')}"
+                      f" ver={b.get('applicationVersion', '')[:30]}")
+            else:
+                print(f"   {label:<14} {s}")
+        except Exception:
+            print(f"   {label:<14} unreachable")
+        time.sleep(0.2)
+
+    # -- Summary -----------------------------------------------------------
+    print()
+    print("=" * 72)
+    print("  ENDPOINT REFERENCE")
+    print("=" * 72)
+    print("""
+  Endpoint     Method  URL Pattern                                       Purpose
+  ─────────    ──────  ──────────────────────────────────────────────     ───────────────────
+  check        POST    /cds/upgrade/1/check/ctx/ota/key/{guid}           Check for OTA update
+  check v2     POST    /cds/upgrade/2/check/ctx/ota/key/{guid}           Same as v1
+  resources    POST    /cds/upgrade/1/resources/t/{tid}/ctx/ota/key/{g}  Get download URLs
+  state        POST    /cds/upgrade/1/state/t/{tid}/s/{st}/ctx/ota/key/  Report install state
+  versions     GET     /cds/upgrade/1/versions                           Server version info
+
+  Required check payload fields: id, extraInfo.otaSourceSha1, identityInfo.serialNumber
+  State payload adds: contentTimestamp, status, reportingTags, upgradeSource
+  Resources payload: minimal (id, identityInfo, idType)
+  Download URLs: ZIP files via dlmgr.gtm.svcmot.com, support HEAD + Range requests
+""")
+
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
 
@@ -323,6 +829,8 @@ def main(argv: list[str] | None = None) -> int:
 
     dispatch = {
         "check-update": _cmd_check_update,
+        "enumerate-updates": _cmd_enumerate_updates,
+        "debug-server": _cmd_debug_server,
         "analyze-smali": _cmd_analyze_smali,
         "analyze-binary": _cmd_analyze_binary,
     }
