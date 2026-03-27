@@ -18,45 +18,50 @@ from tenacity import (
     wait_exponential,
 )
 
+from moto_ota.config.app_config import AppConfig
+from moto_ota.config.device_config import DeviceConfig
+from moto_ota.config.manager import load_app_config, load_device_config
 from moto_ota.config.servers import DEFAULT_SERVER, SERVERS, Server, ServerEnv
 from moto_ota.models.request import build_check_payload
 from moto_ota.models.response import CheckResponse
 
 logger = logging.getLogger(__name__)
 
-_HEADERS = {
-    "Content-Type": "application/json; charset=utf-8",
-    "User-Agent": "com.motorola.ccc.ota",
-    "Connection": "Keep-Alive",
-    "Accept-Encoding": "gzip",
-}
-
 
 class OTAClient:
     """Stateful client for the Motorola CDS API.
 
+    The client reads defaults from the persisted config files but
+    all parameters can be overridden per-call.
+
     Usage::
 
-        client = OTAClient()
+        client = OTAClient()                     # uses saved config
+        client = OTAClient(server=ServerEnv.QA)   # override server
         resp = client.check("0d5cc74421f2e8a", "amxmx")
-        if resp.has_update:
-            print(resp.target_version, resp.download_urls)
     """
 
     def __init__(
         self,
         server: ServerEnv | Server | None = None,
-        timeout: int = 30,
+        app_config: AppConfig | None = None,
+        timeout: int | None = None,
     ) -> None:
+        self._app_cfg = app_config or load_app_config()
+
         if server is None:
-            self._server = SERVERS[DEFAULT_SERVER]
+            self._server = SERVERS.get(
+                self._app_cfg.server_env,
+                SERVERS[DEFAULT_SERVER],
+            )
         elif isinstance(server, ServerEnv):
             self._server = SERVERS[server]
         else:
             self._server = server
-        self._timeout = timeout
+
+        self._timeout = timeout or self._app_cfg.timeout
         self._session = requests.Session()
-        self._session.headers.update(_HEADERS)
+        self._session.headers.update(self._app_cfg.headers)
 
     # ── public API ───────────────────────────────────────────────────
 
@@ -85,7 +90,7 @@ class OTAClient:
         context:
             URL context — ``ota``, ``fota``, or ``modem``.
         payload:
-            Full JSON body override. If *None*, a minimal payload is
+            Full JSON body override.  If *None*, a minimal payload is
             built automatically.
         """
         url = self._server.check_url(guid, context)
@@ -99,6 +104,18 @@ class OTAClient:
             resp.json(),
             headers=dict(resp.headers),
         )
+
+    def check_with_device_config(
+        self,
+        device_config: DeviceConfig | None = None,
+    ) -> CheckResponse:
+        """Check for an update using the saved device configuration."""
+        cfg = device_config or load_device_config()
+        if not cfg.guid:
+            raise ValueError("Device GUID is not configured.  Set it via the config menu or --guid.")
+        if not cfg.carrier:
+            raise ValueError("Carrier is not configured.  Set it via the config menu or --carrier.")
+        return self.check(cfg.guid, cfg.carrier, context=cfg.context)
 
     def server_versions(self) -> dict[str, Any]:
         """Query ``/versions`` endpoint for server metadata."""

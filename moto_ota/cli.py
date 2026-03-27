@@ -2,12 +2,13 @@
 
 Commands
 --------
-* ``moto-ota check``     — check for a single update
-* ``moto-ota chain``     — walk the full update chain
-* ``moto-ota download``  — download OTA files
-* ``moto-ota servers``   — list available CDS servers
-* ``moto-ota carriers``  — list known carrier codes
-* ``moto-ota``           — (no subcommand) launch interactive TUI
+* ``moto-ota check``     -- check for a single update
+* ``moto-ota chain``     -- walk the full update chain
+* ``moto-ota download``  -- download OTA files
+* ``moto-ota servers``   -- list available CDS servers
+* ``moto-ota carriers``  -- list known carrier codes
+* ``moto-ota config``    -- show / edit persistent configuration
+* ``moto-ota``           -- (no subcommand) launch interactive TUI
 """
 
 from __future__ import annotations
@@ -21,9 +22,18 @@ from rich import print as rprint
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 from moto_ota import __version__
+from moto_ota.config.app_config import APP_CONFIG_FIELDS
 from moto_ota.config.carriers import CARRIERS
+from moto_ota.config.device_config import DEVICE_CONFIG_FIELDS
+from moto_ota.config.manager import (
+    app_config_path,
+    device_config_path,
+    load_app_config,
+    load_device_config,
+)
 from moto_ota.config.servers import DEFAULT_SERVER, SERVERS, ServerEnv
 from moto_ota.core.client import OTAClient
 from moto_ota.core.downloader import download_chain
@@ -40,11 +50,10 @@ app = typer.Typer(
 
 
 def _resolve_server(name: str) -> ServerEnv:
-    """Resolve a server name to a :class:`ServerEnv`."""
+    """Resolve a server name to a ServerEnv."""
     try:
         return ServerEnv(name)
     except ValueError:
-        # Try matching by prefix
         for env in ServerEnv:
             if env.value.startswith(name):
                 return env
@@ -54,7 +63,7 @@ def _resolve_server(name: str) -> ServerEnv:
         )
 
 
-# ── commands ─────────────────────────────────────────────────────────
+# -- commands ----------------------------------------------------------
 
 
 @app.command()
@@ -89,14 +98,14 @@ def check(
             f"[bold green]Type  :[/] {resp.update_type}\n"
             f"[bold green]MD5   :[/] {resp.md5}\n"
             f"[bold green]GUID  :[/] {resp.target_guid}",
-            title="✅ Update Available",
+            title="Update Available",
             border_style="green",
         )
         console.print(panel)
         if resp.download_urls:
             console.print(f"\n[bold]Download URLs[/] ({len(resp.download_urls)}):")
             for url in resp.download_urls:
-                console.print(f"  [dim]{url[:100]}…[/]")
+                console.print(f"  [dim]{url[:100]}...[/]")
     else:
         cds = resp.x_cds_content_exists
         console.print(
@@ -104,7 +113,7 @@ def check(
                 f"Server returned [bold]proceed=false[/]\n"
                 f"x-cds-content-exists: [yellow]{cds}[/]\n"
                 f"poll after: {resp.poll_after_seconds}s",
-                title="ℹ️  No Update",
+                title="No Update",
                 border_style="yellow",
             )
         )
@@ -136,8 +145,7 @@ def chain(
         console.print("[yellow]No updates found in chain.[/]")
         raise typer.Exit(1)
 
-    # ── table output ─────────────────────────────────────────────
-    table = Table(title=f"OTA Chain — {len(updates)} update(s)")
+    table = Table(title=f"OTA Chain -- {len(updates)} update(s)")
     table.add_column("#", style="bold", width=4)
     table.add_column("Source", style="cyan")
     table.add_column("Target", style="green")
@@ -158,7 +166,7 @@ def chain(
 
     total_mb = sum(u.size_mb for u in updates)
     console.print(
-        f"\n[bold]Base:[/] {updates[0].source_version}  →  "
+        f"\n[bold]Base:[/] {updates[0].source_version}  ->  "
         f"[bold]Latest:[/] {updates[-1].target_version}  "
         f"([bold]{total_mb:.1f} MB[/] total)"
     )
@@ -216,9 +224,9 @@ def download(
         updates, carrier, output_dir, verify=not no_verify
     )
 
-    console.print(f"\n[bold green]✅ Downloaded {len(saved)} file(s)[/] → {output_dir}")
+    console.print(f"\n[bold green]Downloaded {len(saved)} file(s)[/] -> {output_dir}")
     for p in saved:
-        console.print(f"  📦 {p.name}")
+        console.print(f"  {p.name}")
 
 
 @app.command()
@@ -259,6 +267,51 @@ def carriers(
     console.print(table)
 
 
+@app.command(name="config")
+def config_cmd(
+    show: bool = typer.Option(False, "--show", help="Display current config"),
+    edit: bool = typer.Option(False, "--edit", help="Launch interactive config editor"),
+    paths: bool = typer.Option(False, "--paths", help="Show config file paths"),
+) -> None:
+    """Show or edit persistent configuration."""
+    if paths:
+        console.print(f"App config:    {app_config_path()}")
+        console.print(f"Device config: {device_config_path()}")
+        return
+
+    if show or not edit:
+        cfg_app = load_app_config()
+        cfg_dev = load_device_config()
+
+        # App config table
+        t1 = Table(title="App Configuration", show_lines=True)
+        t1.add_column("Setting", style="bold cyan", min_width=18)
+        t1.add_column("Value", style="green", min_width=20)
+        t1.add_column("Description", style="dim")
+        for f in APP_CONFIG_FIELDS:
+            val = getattr(cfg_app, f["key"], "")
+            t1.add_row(f["label"], str(val) if val != "" else "(empty)", f["description"])
+        console.print(t1)
+
+        console.print()
+
+        # Device config table
+        t2 = Table(title="Device Configuration", show_lines=True)
+        t2.add_column("Setting", style="bold cyan", min_width=18)
+        t2.add_column("Value", style="green", min_width=20)
+        t2.add_column("Description", style="dim")
+        for f in DEVICE_CONFIG_FIELDS:
+            val = getattr(cfg_dev, f["key"], "")
+            t2.add_row(f["label"], str(val) if val != "" else "(empty)", f["description"])
+        console.print(t2)
+
+        console.print(f"\n[dim]Config dir: {app_config_path().parent}[/]")
+
+    if edit:
+        from moto_ota.tui import _config_menu
+        _config_menu()
+
+
 @app.command()
 def interactive() -> None:
     """Launch the interactive terminal UI."""
@@ -267,7 +320,7 @@ def interactive() -> None:
     run_tui()
 
 
-# ── default callback → launch TUI when no subcommand is given ────────
+# -- default callback -> launch TUI when no subcommand is given --------
 
 
 @app.callback(invoke_without_command=True)
