@@ -7,6 +7,7 @@ Commands
 * ``moto-ota download``  -- download OTA files
 * ``moto-ota servers``   -- list available CDS servers
 * ``moto-ota carriers``  -- list known carrier codes
+* ``moto-ota scan``      -- scan carriers against a GUID to detect status & OTA versions
 * ``moto-ota config``    -- show / edit persistent configuration
 * ``moto-ota``           -- (no subcommand) launch interactive TUI
 """
@@ -261,10 +262,151 @@ def carriers(
             continue
         if not show_all and c.status == "whitelisted":
             continue
-        status_style = "green" if c.status == "open" else "yellow"
+        if c.status == "open":
+            status_style = "green"
+        elif c.status == "whitelisted":
+            status_style = "yellow"
+        else:
+            status_style = "dim"
         table.add_row(c.code, c.name, c.region, f"[{status_style}]{c.status}[/]")
 
     console.print(table)
+    console.print(
+        "\n[dim]Tip: use [bold]moto-ota scan --guid <GUID>[/dim] "
+        "to auto-detect carrier status and OTA versions.[/]"
+    )
+
+
+@app.command()
+def scan(
+    guid: str = typer.Option(..., "--guid", "-g", help="Device GUID (ro.mot.build.guid)"),
+    server: str = typer.Option(
+        DEFAULT_SERVER.value,
+        "--server",
+        "-s",
+        help="CDS server environment",
+    ),
+    output_json: Optional[Path] = typer.Option(
+        None, "--output", "-o", help="Save results to JSON file"
+    ),
+) -> None:
+    """Scan all carriers against a GUID to auto-detect status and OTA versions.
+
+    Tests every known carrier code against the CDS server and classifies each
+    as **open** (proceed=true), **whitelisted** (x-cds-content-exists but
+    proceed=false), or no content.  Open carriers show OTA version info for
+    cross-carrier comparison.
+    """
+    from moto_ota.config.carriers import all_scannable_carriers
+
+    env = _resolve_server(server)
+    available = all_scannable_carriers()
+    total = len(available)
+
+    results_open: list[dict] = []
+    results_wl: list[dict] = []
+
+    console.print(
+        f"[bold]Scanning {total} carriers[/] on {SERVERS[env].label}  "
+        f"guid=[cyan]{guid}[/]\n"
+    )
+
+    with console.status("[bold cyan]Scanning carriers…[/]") as status:
+        with OTAClient(env) as client:
+            for idx, carrier in enumerate(available):
+                status.update(
+                    f"[bold cyan]Scanning carriers…[/]  "
+                    f"{idx + 1}/{total}  [dim]{carrier.code}[/]"
+                )
+                try:
+                    resp = client.check(guid, carrier.code)
+                    if resp.has_update:
+                        results_open.append({
+                            "code": carrier.code,
+                            "name": carrier.name,
+                            "region": carrier.region,
+                            "status": "open",
+                            "version": resp.target_version or "—",
+                            "size": f"{resp.size_mb:.1f} MB",
+                            "filename": f"{resp.target_version}_{carrier.code}.zip",
+                        })
+                    elif resp.x_cds_content_exists:
+                        tv = resp.target_version
+                        ver = tv if tv and tv != "?" else "—"
+                        results_wl.append({
+                            "code": carrier.code,
+                            "name": carrier.name,
+                            "region": carrier.region,
+                            "status": "whitelisted",
+                            "version": ver,
+                            "size": f"{resp.size_mb:.1f} MB" if resp.size_bytes else "—",
+                            "filename": "—",
+                        })
+                except Exception:
+                    pass
+
+    found = len(results_open) + len(results_wl)
+
+    if found == 0:
+        console.print(
+            Panel(
+                f"[yellow]No carriers returned updates for GUID {guid}.[/]\n\n"
+                f"[dim]Tested {total} carriers.\n"
+                f"The OTA package may have expired or the GUID is invalid.[/]",
+                title="Carrier Scan Results",
+                border_style="yellow",
+            )
+        )
+        raise typer.Exit(1)
+
+    # --- Build results table ---
+    table = Table(
+        title=f"Carrier Scan — {found} carrier(s) for GUID {guid[:15]}",
+        border_style="cyan",
+    )
+    table.add_column("Carrier", style="bold cyan")
+    table.add_column("Name")
+    table.add_column("Region")
+    table.add_column("Status")
+    table.add_column("OTA Version", style="green")
+    table.add_column("Size", justify="right")
+    table.add_column("Filename Preview", style="dim")
+
+    for row in results_open:
+        table.add_row(
+            row["code"], row["name"], row["region"],
+            f"[green]{row['status']}[/]",
+            row["version"], row["size"], row["filename"],
+        )
+    for row in results_wl:
+        table.add_row(
+            row["code"], row["name"], row["region"],
+            f"[yellow]{row['status']}[/]",
+            row["version"], row["size"], row["filename"],
+        )
+
+    console.print(table)
+    console.print(
+        f"\n  Scanned {total} carriers: "
+        f"[bold green]{len(results_open)} open[/], "
+        f"[bold yellow]{len(results_wl)} whitelisted[/], "
+        f"{total - found} no content"
+    )
+
+    # Version comparison
+    versions = {r["version"] for r in results_open if r["version"] != "—"}
+    if len(versions) > 1:
+        console.print(
+            f"\n  [bold yellow]⚠ Multiple OTA versions detected:[/] "
+            + ", ".join(sorted(versions))
+        )
+    elif len(versions) == 1:
+        console.print(f"\n  All open carriers have version: [bold green]{versions.pop()}[/]")
+
+    if output_json:
+        data = {"guid": guid, "server": env.value, "open": results_open, "whitelisted": results_wl}
+        output_json.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        console.print(f"\n[dim]Saved to {output_json}[/]")
 
 
 @app.command(name="config")

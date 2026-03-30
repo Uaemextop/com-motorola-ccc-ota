@@ -1333,8 +1333,11 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
                             fname,
                         ))
                     elif resp.x_cds_content_exists:
-                        # Whitelisted — content exists but proceed=false
-                        ver = resp.target_version or "—"
+                        # Whitelisted — content exists but proceed=false;
+                        # server returns minimal content (updateType only,
+                        # no displayVersion / size / URLs).
+                        tv = resp.target_version
+                        ver = tv if tv and tv != "?" else "—"
                         sz = f"{resp.size_mb:.1f} MB" if resp.size_bytes else "—"
                         results_wl.append((
                             carrier.code, carrier.name, carrier.region,
