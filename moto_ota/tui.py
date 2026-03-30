@@ -58,7 +58,7 @@ from moto_ota.config.manager import (
 )
 from moto_ota.config.servers import SERVERS, ServerEnv
 from moto_ota.core.client import OTAClient
-from moto_ota.core.downloader import download_chain
+from moto_ota.core.downloader import download_ota, make_progress, _safe_filename
 
 # =====================================================================
 #  Colour theme  (penumbra-inspired — cyan/blue gradient accent)
@@ -617,21 +617,22 @@ def _fullscreen_display(
     scroll_offset = 0
 
     # Pre-render content to lines so we can measure & scroll.
-    _buf = io.StringIO()
-    _scratch = Console(width=console.width or 100, file=_buf, force_terminal=True)
-    _scratch.print(content)
-    _rendered_lines = _buf.getvalue().splitlines()
-    _buf.close()
+    with io.StringIO() as _buf:
+        _scratch = Console(width=console.width or 100, file=_buf, force_terminal=True)
+        _scratch.print(content)
+        _rendered_lines = _buf.getvalue().splitlines()
+
+    def _max_scroll() -> tuple[int, int]:
+        """Return (avail_lines, max_offset) for current terminal size."""
+        h = console.height or 24
+        avail = max(h - 5, 3)  # stars(1) + top(2) + footer(2)
+        return avail, max(0, len(_rendered_lines) - avail)
 
     def _render() -> RenderableType:
         nonlocal scroll_offset
         w = console.width or 100
-        h = console.height or 24
-        # Available height for content: total - stars(1) - top(2) - footer(2)
-        avail = max(h - 5, 3)
+        avail, max_offset = _max_scroll()
         total_lines = len(_rendered_lines)
-
-        max_offset = max(0, total_lines - avail)
         scroll_offset = max(0, min(scroll_offset, max_offset))
 
         # Show the visible window of lines
@@ -715,14 +716,99 @@ def _fullscreen_display(
                 scroll_offset = max(0, scroll_offset - 1)
                 live.update(_render())
             elif key == "down":
-                total_lines = len(_rendered_lines)
-                h = console.height or 24
-                avail = max(h - 5, 3)
-                max_offset = max(0, total_lines - avail)
+                _, max_offset = _max_scroll()
                 scroll_offset = min(max_offset, scroll_offset + 1)
                 live.update(_render())
             elif key in ("enter", "escape", "quit", "q"):
                 break
+
+
+def _fullscreen_download(
+    chain: list,
+    carrier: str,
+    output_dir: Path,
+    *,
+    verify: bool = True,
+) -> list[Path]:
+    """Download OTA files inside a penumbra-style full-screen display.
+
+    Shows a :class:`rich.progress.Progress` bar embedded in the
+    starfield layout so downloads stay in the alternate screen buffer.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    progress = make_progress()  # standalone — not used as context manager
+    saved: list[Path] = []
+    status_parts: list[tuple[str, str]] = []
+
+    def _render() -> RenderableType:
+        w = console.width or 100
+        stars = _star_block(w, 1)
+        heading = Align.center(
+            Text("  Downloading  ", style=f"bold {ACCENT}"),
+        )
+
+        # Build content: progress bar + completed-file list
+        parts: list[RenderableType] = [progress, Text("")]
+        if status_parts:
+            for msg, style in status_parts:
+                parts.append(Text(msg, style=style))
+
+        content = Align.center(
+            Padding(Group(*parts), (1, 4)),
+            vertical="middle",
+        )
+
+        footer_text = Text.assemble(
+            ("  downloading ", MUTED),
+            (f"{len(saved)}/{len(chain)}", f"bold {TEXT}"),
+            (" files… ", MUTED),
+        )
+        footer = Align.center(footer_text)
+
+        lay = Layout()
+        lay.split_column(
+            Layout(name="stars", size=1),
+            Layout(name="top", size=2),
+            Layout(name="content", ratio=1),
+            Layout(name="footer", size=2),
+        )
+        lay["stars"].update(stars)
+        lay["top"].update(heading)
+        lay["content"].update(content)
+        lay["footer"].update(footer)
+        return lay
+
+    with Live(
+        _render(),
+        console=console,
+        screen=True,
+        refresh_per_second=10,
+        get_renderable=_render,
+    ) as live:
+        for idx, resp in enumerate(chain, 1):
+            urls = resp.download_urls
+            if not urls:
+                continue
+            url = urls[0]
+            filename = _safe_filename(resp.target_version, carrier, idx)
+            dest = output_dir / filename
+            task = progress.add_task(
+                f"[{idx}/{len(chain)}] {resp.target_version}",
+                total=resp.size_bytes or None,
+            )
+            md5 = resp.md5 if verify else ""
+            download_ota(
+                url, dest,
+                expected_md5=md5,
+                progress=progress,
+                task_id=task,
+            )
+            saved.append(dest)
+            status_parts.append(
+                (f"  ✓ {filename}", SUCCESS),
+            )
+
+    return saved
 
 
 def _fullscreen_spinner(
@@ -1656,10 +1742,9 @@ def _run_tui_inner() -> None:
             ):
                 continue
             app_cfg = load_app_config()
-            saved = download_chain(
+            saved = _fullscreen_download(
                 updates, carrier, output_dir,
                 verify=app_cfg.verify_md5,
-                console=console,
             )
             file_list = "\n".join(f"  {p.name}" for p in saved)
             result_body = (
