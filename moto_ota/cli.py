@@ -354,15 +354,13 @@ def scan(
                             "filename": f"{resp.target_version}_{carrier.code}.zip",
                         })
                     elif resp.x_cds_content_exists:
-                        tv = resp.target_version
-                        ver = tv if tv and tv != "?" else "—"
                         results_wl.append({
                             "code": carrier.code,
                             "name": carrier.name,
                             "region": carrier.region,
                             "status": "whitelisted",
-                            "version": ver,
-                            "size": f"{resp.size_mb:.1f} MB" if resp.size_bytes else "—",
+                            "version": "—",
+                            "size": "—",
                             "filename": "—",
                         })
 
