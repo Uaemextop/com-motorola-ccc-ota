@@ -58,8 +58,6 @@ from moto_ota.config.manager import (
 from moto_ota.config.servers import SERVERS, ServerEnv
 from moto_ota.core.client import OTAClient
 from moto_ota.core.downloader import download_chain
-from moto_ota.models.request import build_check_payload
-from moto_ota.models.response import CheckResponse
 
 # =====================================================================
 #  Colour theme  (penumbra-inspired — cyan/blue gradient accent)
@@ -1292,14 +1290,10 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
                           (content exists but needs serial whitelisting)
       · *no content*    — ``proceed=false`` and no content flag (skipped)
 
-    Uses parallel requests (20 threads) for fast scanning.
     The scan shows a live progress bar inside the full-screen TUI.
     """
-    import concurrent.futures
-
     available = all_scannable_carriers()
     total = len(available)
-    srv = SERVERS[env]
 
     # (code, name, region, detected_status, target_ver, size, fname)
     results_open: list[tuple] = []
@@ -1336,34 +1330,16 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
         lay["bottom_stars"].update(_star_block(w, 1))
         return lay
 
-    def _check_one(carrier):
-        """Check a single carrier (runs in thread pool)."""
-        import requests as _req
-
-        url = srv.check_url(guid, "ota")
-        body = build_check_payload(guid, carrier.code)
-        try:
-            resp = _req.post(
-                url, json=body, timeout=10,
-                headers={"User-Agent": "com.motorola.ccc.ota"},
-            )
-            resp.raise_for_status()
-            cr = CheckResponse.from_dict(resp.json(), headers=dict(resp.headers))
-            return (carrier, cr, None)
-        except Exception as exc:
-            return (carrier, None, exc)
-
     with Live(
         _progress_render(),
         console=console,
         screen=True,
         refresh_per_second=4,
     ) as live:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as pool:
-            futures = {pool.submit(_check_one, c): c for c in available}
-            for future in concurrent.futures.as_completed(futures):
-                carrier, resp, exc = future.result()
-                if resp is not None and exc is None:
+        with OTAClient(env) as client:
+            for idx, carrier in enumerate(available):
+                try:
+                    resp = client.check(guid, carrier.code)
                     if resp.has_update:
                         fname = f"{resp.target_version}_{carrier.code}.zip"
                         results_open.append((
@@ -1385,7 +1361,9 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
                             "whitelisted",
                             ver, sz, "—",
                         ))
-                scanned += 1
+                except Exception:
+                    pass
+                scanned = idx + 1
                 live.update(_progress_render())
 
     found = len(results_open) + len(results_wl)
@@ -1403,6 +1381,10 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
         return
 
     # --- Build results table ------------------------------------------
+    # Sort before building table for clean display
+    results_open.sort(key=lambda r: (r[2], r[0]))  # region, code
+    results_wl.sort(key=lambda r: (r[2], r[0]))
+
     table = Table(
         title=f"Carrier Scan — {found} carrier(s) for GUID {guid[:15]}",
         border_style=ACCENT2, box=box.ROUNDED,
@@ -1430,10 +1412,6 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
             f"[{WARNING}]{status}[/]",
             target, size, fname,
         )
-
-    # Sort results for clean display
-    results_open.sort(key=lambda r: (r[2], r[0]))  # region, code
-    results_wl.sort(key=lambda r: (r[2], r[0]))
 
     summary = Text.assemble(
         (f"\n  Scanned {total} carriers: ", MUTED),
