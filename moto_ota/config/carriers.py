@@ -338,6 +338,7 @@ CARRIERS: list[Carrier] = [
     Carrier("retin", "Retail India", "Asia"),
     Carrier("retcn", "Retail China", "Asia"),
     Carrier("retapac", "Retail Asia Pacific", "Asia"),
+    Carrier("retapac_np", "Retail Asia Pacific (NP)", "Asia"),
     Carrier("retasia", "Retail Asia", "Asia"),
     Carrier("retjp", "Retail Japan", "Asia"),
     Carrier("retkr", "Retail Korea", "Asia"),
@@ -471,6 +472,7 @@ CARRIERS: list[Carrier] = [
     # =====================================================================
     # Global / Other
     # =====================================================================
+    Carrier("retail", "Retail", "Global"),
     Carrier("retgl", "Retail Global", "Global"),
     Carrier("openmarket", "Open Market Global", "Global"),
     Carrier("retear", "Retail Eastern Region", "Global"),
