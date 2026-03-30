@@ -17,6 +17,7 @@ reading with timeouts.
 
 from __future__ import annotations
 
+import io
 import random
 import sys
 import time
@@ -599,11 +600,12 @@ def _fullscreen_display(
     content: RenderableType,
     *,
     title: str = "",
-    footer_hint: str = "Press any key to continue",
+    footer_hint: str = "",
 ) -> None:
     """Show *content* in a full-screen penumbra display with starfield.
 
-    Blocks until the user presses any key, then returns.
+    Supports scrolling with ↑/↓ arrow keys when content is taller than
+    the visible area.  Press Enter, Escape, or q to exit.
     """
     # Drain any buffered keypresses so they don't immediately dismiss
     # this screen (e.g. stale input from a long-running scan).
@@ -612,14 +614,70 @@ def _fullscreen_display(
     except Exception:
         pass
 
+    scroll_offset = 0
+
+    # Pre-render content to lines so we can measure & scroll.
+    _buf = io.StringIO()
+    _scratch = Console(width=console.width or 100, file=_buf, force_terminal=True)
+    _scratch.print(content)
+    _rendered_lines = _buf.getvalue().splitlines()
+    _buf.close()
+
     def _render() -> RenderableType:
+        nonlocal scroll_offset
         w = console.width or 100
-        footer_text = Text.assemble(
-            ("  [", MUTED),
-            ("any key", f"bold {TEXT}"),
+        h = console.height or 24
+        # Available height for content: total - stars(1) - top(2) - footer(2)
+        avail = max(h - 5, 3)
+        total_lines = len(_rendered_lines)
+
+        max_offset = max(0, total_lines - avail)
+        scroll_offset = max(0, min(scroll_offset, max_offset))
+
+        # Show the visible window of lines
+        visible = _rendered_lines[scroll_offset:scroll_offset + avail]
+        visible_text = Text.from_ansi("\n".join(visible))
+
+        # Build scroll indicator
+        if total_lines > avail:
+            pct = int(100 * (scroll_offset + avail) / total_lines)
+            pct = min(pct, 100)
+            scroll_info = f" [{scroll_offset + 1}-{min(scroll_offset + avail, total_lines)}/{total_lines}] {pct}%"
+        else:
+            scroll_info = ""
+
+        # Footer with navigation hints
+        if total_lines > avail:
+            footer_parts = [
+                ("  [", MUTED),
+                ("↑↓", f"bold {TEXT}"),
+                ("] ", MUTED),
+                ("Scroll  ", MUTED),
+            ]
+        else:
+            footer_parts = []
+
+        if footer_hint:
+            footer_parts.extend([
+                ("  ", MUTED),
+                (footer_hint, MUTED),
+                ("  ", MUTED),
+            ])
+
+        footer_parts.extend([
+            ("[", MUTED),
+            ("Enter/Esc", f"bold {TEXT}"),
             ("] ", MUTED),
-            (footer_hint, MUTED),
-        )
+            ("Back", MUTED),
+        ])
+
+        if scroll_info:
+            footer_parts.extend([
+                ("  ", MUTED),
+                (scroll_info, MUTED),
+            ])
+
+        footer_text = Text.assemble(*footer_parts)
         footer = Align.center(footer_text)
         stars = _star_block(w, 1)
 
@@ -638,7 +696,7 @@ def _fullscreen_display(
             lay["top"].update(heading)
         else:
             lay["top"].update(Text(""))
-        lay["content"].update(Align.center(content, vertical="middle"))
+        lay["content"].update(Padding(visible_text, (0, 2)))
         lay["footer"].update(footer)
         return lay
 
@@ -653,8 +711,18 @@ def _fullscreen_display(
             if key is None:
                 live.update(_render())
                 continue
-            # Any key press exits
-            break
+            if key == "up":
+                scroll_offset = max(0, scroll_offset - 1)
+                live.update(_render())
+            elif key == "down":
+                total_lines = len(_rendered_lines)
+                h = console.height or 24
+                avail = max(h - 5, 3)
+                max_offset = max(0, total_lines - avail)
+                scroll_offset = min(max_offset, scroll_offset + 1)
+                live.update(_render())
+            elif key in ("enter", "escape", "quit", "q"):
+                break
 
 
 def _fullscreen_spinner(
