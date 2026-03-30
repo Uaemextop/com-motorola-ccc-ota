@@ -296,30 +296,57 @@ def scan(
     as **open** (proceed=true), **whitelisted** (x-cds-content-exists but
     proceed=false), or no content.  Open carriers show OTA version info for
     cross-carrier comparison.
+
+    Uses parallel requests for fast scanning (~30 seconds for 400+ carriers).
     """
-    from moto_ota.config.carriers import all_scannable_carriers
+    import concurrent.futures
+
+    from moto_ota.config.carriers import Carrier, all_scannable_carriers
+    from moto_ota.models.request import build_check_payload
+    from moto_ota.models.response import CheckResponse
 
     env = _resolve_server(server)
+    srv = SERVERS[env]
     available = all_scannable_carriers()
     total = len(available)
 
     results_open: list[dict] = []
     results_wl: list[dict] = []
+    errors = 0
 
     console.print(
-        f"[bold]Scanning {total} carriers[/] on {SERVERS[env].label}  "
+        f"[bold]Scanning {total} carriers[/] on {srv.label}  "
         f"guid=[cyan]{guid}[/]\n"
     )
 
+    def _check_one(carrier: Carrier) -> tuple:
+        """Check a single carrier (runs in thread pool)."""
+        import requests as _req
+
+        url = srv.check_url(guid, "ota")
+        body = build_check_payload(guid, carrier.code)
+        try:
+            resp = _req.post(
+                url, json=body, timeout=10,
+                headers={"User-Agent": "com.motorola.ccc.ota"},
+            )
+            resp.raise_for_status()
+            cr = CheckResponse.from_dict(resp.json(), headers=dict(resp.headers))
+            return (carrier, cr, None)
+        except Exception as exc:
+            return (carrier, None, exc)
+
     with console.status("[bold cyan]Scanning carriers…[/]") as status:
-        with OTAClient(env) as client:
-            for idx, carrier in enumerate(available):
-                status.update(
-                    f"[bold cyan]Scanning carriers…[/]  "
-                    f"{idx + 1}/{total}  [dim]{carrier.code}[/]"
-                )
-                try:
-                    resp = client.check(guid, carrier.code)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as pool:
+            futures = {pool.submit(_check_one, c): c for c in available}
+            done = 0
+            for future in concurrent.futures.as_completed(futures):
+                done += 1
+                carrier, resp, exc = future.result()
+
+                if exc is not None:
+                    errors += 1
+                elif resp is not None:
                     if resp.has_update:
                         results_open.append({
                             "code": carrier.code,
@@ -342,16 +369,23 @@ def scan(
                             "size": f"{resp.size_mb:.1f} MB" if resp.size_bytes else "—",
                             "filename": "—",
                         })
-                except Exception:
-                    pass
+
+                if done % 25 == 0 or done == total:
+                    status.update(
+                        f"[bold cyan]Scanning carriers…[/]  "
+                        f"{done}/{total}  "
+                        f"[green]{len(results_open)} open[/]  "
+                        f"[yellow]{len(results_wl)} whitelisted[/]"
+                    )
 
     found = len(results_open) + len(results_wl)
+    no_content = total - found - errors
 
     if found == 0:
         console.print(
             Panel(
                 f"[yellow]No carriers returned updates for GUID {guid}.[/]\n\n"
-                f"[dim]Tested {total} carriers.\n"
+                f"[dim]Tested {total} carriers ({errors} errors).\n"
                 f"The OTA package may have expired or the GUID is invalid.[/]",
                 title="Carrier Scan Results",
                 border_style="yellow",
@@ -360,8 +394,11 @@ def scan(
         raise typer.Exit(1)
 
     # --- Build results table ---
+    results_open.sort(key=lambda r: (r["region"], r["code"]))
+    results_wl.sort(key=lambda r: (r["region"], r["code"]))
+
     table = Table(
-        title=f"Carrier Scan — {found} carrier(s) for GUID {guid[:15]}",
+        title=f"Carrier Scan — {found} carrier(s) for GUID {guid}",
         border_style="cyan",
     )
     table.add_column("Carrier", style="bold cyan")
@@ -370,19 +407,18 @@ def scan(
     table.add_column("Status")
     table.add_column("OTA Version", style="green")
     table.add_column("Size", justify="right")
-    table.add_column("Filename Preview", style="dim")
 
     for row in results_open:
         table.add_row(
             row["code"], row["name"], row["region"],
             f"[green]{row['status']}[/]",
-            row["version"], row["size"], row["filename"],
+            row["version"], row["size"],
         )
     for row in results_wl:
         table.add_row(
             row["code"], row["name"], row["region"],
             f"[yellow]{row['status']}[/]",
-            row["version"], row["size"], row["filename"],
+            row["version"], row["size"],
         )
 
     console.print(table)
@@ -390,7 +426,8 @@ def scan(
         f"\n  Scanned {total} carriers: "
         f"[bold green]{len(results_open)} open[/], "
         f"[bold yellow]{len(results_wl)} whitelisted[/], "
-        f"{total - found} no content"
+        f"{no_content} no content"
+        + (f", {errors} errors" if errors else "")
     )
 
     # Version comparison

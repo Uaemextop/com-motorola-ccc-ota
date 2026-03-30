@@ -171,6 +171,17 @@ def _read_key_timeout(timeout: float = 0.12) -> str | None:
     return _read_key_timeout_unix(timeout)
 
 
+def _flush_stdin() -> None:
+    """Drain any buffered stdin so stale keypresses don't skip screens."""
+    if _IS_WINDOWS:
+        import msvcrt as _m
+        while _m.kbhit():
+            _m.getch()
+    else:
+        import termios as _t
+        _t.tcflush(sys.stdin.fileno(), _t.TCIFLUSH)
+
+
 # -- Windows implementations ------------------------------------------
 
 def _read_key_win() -> str:
@@ -594,6 +605,12 @@ def _fullscreen_display(
 
     Blocks until the user presses any key, then returns.
     """
+    # Drain any buffered keypresses so they don't immediately dismiss
+    # this screen (e.g. stale input from a long-running scan).
+    try:
+        _flush_stdin()
+    except Exception:
+        pass
 
     def _render() -> RenderableType:
         w = console.width or 100
@@ -1273,10 +1290,16 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
                           (content exists but needs serial whitelisting)
       · *no content*    — ``proceed=false`` and no content flag (skipped)
 
-    The scan shows a live progress spinner inside the full-screen TUI.
+    Uses parallel requests (20 threads) for fast scanning.
+    The scan shows a live progress bar inside the full-screen TUI.
     """
+    import concurrent.futures
+
+    from moto_ota.models.request import build_check_payload
+
     available = all_scannable_carriers()
     total = len(available)
+    srv = SERVERS[env]
 
     # (code, name, region, detected_status, target_ver, size, fname)
     results_open: list[tuple] = []
@@ -1313,16 +1336,34 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
         lay["bottom_stars"].update(_star_block(w, 1))
         return lay
 
+    def _check_one(carrier):
+        """Check a single carrier (runs in thread pool)."""
+        import requests as _req
+
+        url = srv.check_url(guid, "ota")
+        body = build_check_payload(guid, carrier.code)
+        try:
+            resp = _req.post(
+                url, json=body, timeout=10,
+                headers={"User-Agent": "com.motorola.ccc.ota"},
+            )
+            resp.raise_for_status()
+            cr = CheckResponse.from_dict(resp.json(), headers=dict(resp.headers))
+            return (carrier, cr, None)
+        except Exception as exc:
+            return (carrier, None, exc)
+
     with Live(
         _progress_render(),
         console=console,
         screen=True,
         refresh_per_second=4,
     ) as live:
-        with OTAClient(env) as client:
-            for idx, carrier in enumerate(available):
-                try:
-                    resp = client.check(guid, carrier.code)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as pool:
+            futures = {pool.submit(_check_one, c): c for c in available}
+            for future in concurrent.futures.as_completed(futures):
+                carrier, resp, exc = future.result()
+                if resp is not None and exc is None:
                     if resp.has_update:
                         fname = f"{resp.target_version}_{carrier.code}.zip"
                         results_open.append((
@@ -1344,9 +1385,7 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
                             "whitelisted",
                             ver, sz, "—",
                         ))
-                except Exception:
-                    pass
-                scanned = idx + 1
+                scanned += 1
                 live.update(_progress_render())
 
     found = len(results_open) + len(results_wl)
@@ -1392,6 +1431,10 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
             target, size, fname,
         )
 
+    # Sort results for clean display
+    results_open.sort(key=lambda r: (r[2], r[0]))  # region, code
+    results_wl.sort(key=lambda r: (r[2], r[0]))
+
     summary = Text.assemble(
         (f"\n  Scanned {total} carriers: ", MUTED),
         (f"{len(results_open)} open", f"bold {SUCCESS}"),
@@ -1399,7 +1442,23 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
         (f"{len(results_wl)} whitelisted", f"bold {WARNING}"),
         (f", {total - found} no content", MUTED),
     )
-    content = Group(table, summary)
+
+    # Version comparison line
+    versions = {row[4] for row in results_open if row[4] and row[4] != "—"}
+    if len(versions) > 1:
+        ver_line = Text.assemble(
+            ("\n  ⚠ Multiple OTA versions: ", f"bold {WARNING}"),
+            (", ".join(sorted(versions)), f"{TEXT}"),
+        )
+    elif len(versions) == 1:
+        ver_line = Text.assemble(
+            ("\n  All open carriers: ", MUTED),
+            (versions.pop(), f"bold {SUCCESS}"),
+        )
+    else:
+        ver_line = Text("")
+
+    content = Group(table, summary, ver_line)
     _fullscreen_display(content, title="Carrier Scan Results")
 
 
