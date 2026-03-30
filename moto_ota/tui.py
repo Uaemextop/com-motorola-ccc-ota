@@ -58,6 +58,8 @@ from moto_ota.config.manager import (
 from moto_ota.config.servers import SERVERS, ServerEnv
 from moto_ota.core.client import OTAClient
 from moto_ota.core.downloader import download_chain
+from moto_ota.models.request import build_check_payload
+from moto_ota.models.response import CheckResponse
 
 # =====================================================================
 #  Colour theme  (penumbra-inspired — cyan/blue gradient accent)
@@ -1294,8 +1296,6 @@ def _scan_carriers(guid: str, env: ServerEnv) -> None:
     The scan shows a live progress bar inside the full-screen TUI.
     """
     import concurrent.futures
-
-    from moto_ota.models.request import build_check_payload
 
     available = all_scannable_carriers()
     total = len(available)

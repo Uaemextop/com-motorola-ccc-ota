@@ -14,10 +14,12 @@ Commands
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 from pathlib import Path
 from typing import Optional
 
+import requests
 import typer
 from rich import print as rprint
 from rich.console import Console
@@ -27,7 +29,7 @@ from rich.text import Text
 
 from moto_ota import __version__
 from moto_ota.config.app_config import APP_CONFIG_FIELDS
-from moto_ota.config.carriers import CARRIERS
+from moto_ota.config.carriers import CARRIERS, Carrier, all_scannable_carriers
 from moto_ota.config.device_config import DEVICE_CONFIG_FIELDS
 from moto_ota.config.manager import (
     app_config_path,
@@ -38,6 +40,8 @@ from moto_ota.config.manager import (
 from moto_ota.config.servers import DEFAULT_SERVER, SERVERS, ServerEnv
 from moto_ota.core.client import OTAClient
 from moto_ota.core.downloader import download_chain
+from moto_ota.models.request import build_check_payload
+from moto_ota.models.response import CheckResponse
 
 console = Console()
 
@@ -299,12 +303,6 @@ def scan(
 
     Uses parallel requests for fast scanning (~30 seconds for 400+ carriers).
     """
-    import concurrent.futures
-
-    from moto_ota.config.carriers import Carrier, all_scannable_carriers
-    from moto_ota.models.request import build_check_payload
-    from moto_ota.models.response import CheckResponse
-
     env = _resolve_server(server)
     srv = SERVERS[env]
     available = all_scannable_carriers()
@@ -321,12 +319,10 @@ def scan(
 
     def _check_one(carrier: Carrier) -> tuple:
         """Check a single carrier (runs in thread pool)."""
-        import requests as _req
-
         url = srv.check_url(guid, "ota")
         body = build_check_payload(guid, carrier.code)
         try:
-            resp = _req.post(
+            resp = requests.post(
                 url, json=body, timeout=10,
                 headers={"User-Agent": "com.motorola.ccc.ota"},
             )
