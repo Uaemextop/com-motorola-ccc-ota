@@ -1,10 +1,11 @@
+import type { Carrier } from '@/lib/types';
+
 /**
  * Motorola CDS carrier database
- * 438 carrier codes across 10 regions
+ * 410 carrier codes across 10 regions
  * Sources: XDA, firmware repos, community testing
  */
-
-export const CARRIERS = Object.freeze([
+export const CARRIERS: readonly Carrier[] = Object.freeze([
   // ═══ LATAM (86 carriers) ═══
   { code: 'amxmx', name: 'América Móvil México', region: 'LATAM' },
   { code: 'openmx', name: 'Open Market México', region: 'LATAM' },
@@ -432,56 +433,23 @@ export const CARRIERS = Object.freeze([
   { code: 'soak', name: 'Soak Test Channel', region: 'Global' },
   { code: 'engineering', name: 'Engineering Builds', region: 'Global' },
   { code: 'factory', name: 'Factory Channel', region: 'Global' },
-]);
+] as const);
 
-/**
- * Find a carrier by its exact code.
- * @param {string} code - Carrier code (e.g. 'att', 'vfeu')
- * @returns {Object|undefined} Carrier object or undefined
- */
-export function getCarrierByCode(code) {
-  return CARRIERS.find(c => c.code === code);
+/** Get all carriers belonging to a specific region. */
+export function getCarriersByRegion(region: string): Carrier[] {
+  return CARRIERS.filter((c) => c.region === region);
 }
 
-/**
- * Get all carriers belonging to a specific region.
- * @param {string} region - Region name (e.g. 'Europe', 'LATAM')
- * @returns {Object[]} Array of matching carrier objects
- */
-export function getCarriersByRegion(region) {
-  return CARRIERS.filter(c => c.region === region);
+/** Get all unique region names. */
+export function getUniqueRegions(): string[] {
+  return [...new Set(CARRIERS.map((c) => c.region))];
 }
 
-/**
- * Search carriers by code, name, or region (case-insensitive).
- * @param {string} query - Search term
- * @returns {Object[]} Array of matching carrier objects
- */
-export function searchCarriers(query) {
+/** Search carriers by code or name (case-insensitive). */
+export function searchCarriers(query: string): Carrier[] {
   const q = query.toLowerCase();
-  return CARRIERS.filter(c =>
-    c.code.toLowerCase().includes(q) ||
-    c.name.toLowerCase().includes(q) ||
-    c.region.toLowerCase().includes(q)
+  return CARRIERS.filter(
+    (c) =>
+      c.code.toLowerCase().includes(q) || c.name.toLowerCase().includes(q),
   );
-}
-
-/**
- * Get the number of carriers in each region.
- * @returns {Object} Map of region name to carrier count
- */
-export function getRegionCounts() {
-  const counts = {};
-  for (const c of CARRIERS) {
-    counts[c.region] = (counts[c.region] || 0) + 1;
-  }
-  return counts;
-}
-
-/**
- * Get all unique region names.
- * @returns {string[]} Array of region names
- */
-export function getAllRegionNames() {
-  return [...new Set(CARRIERS.map(c => c.region))];
 }
