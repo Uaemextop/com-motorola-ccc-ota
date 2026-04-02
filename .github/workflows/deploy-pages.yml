@@ -2,7 +2,7 @@ name: Deploy MotoOTA to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths:
       - 'motoota/**'
       - '.github/workflows/deploy-pages.yml'
@@ -33,7 +33,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: motoota
-        run: npm ci --legacy-peer-deps
+        run: npm ci
 
       - name: Build
         working-directory: motoota
