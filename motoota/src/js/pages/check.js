@@ -332,7 +332,7 @@ export function render(container) {
   // Title
   const header = document.createElement('div');
   header.className = 'section-header';
-  header.innerHTML = '<h2 class="section-title"><i class="fa-solid fa-magnifying-glass" style="color:var(--color-cyan)"></i> Check for Update</h2>';
+  header.innerHTML = '<h2 class="section-title"><i class="fa-solid fa-magnifying-glass" style="color:var(--color-cyan)"></i> Verificar Actualización</h2>';
   page.appendChild(header);
 
   const desc = document.createElement('p');
@@ -390,7 +390,7 @@ export function render(container) {
   actions.className = 'check-form-actions';
   const checkBtn = document.createElement('button');
   checkBtn.className = 'btn btn-primary btn-lg';
-  checkBtn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Check for Update';
+  checkBtn.innerHTML = '<i class="fa-solid fa-magnifying-glass"></i> Verificar Actualización';
   actions.appendChild(checkBtn);
   form.appendChild(actions);
 
@@ -407,21 +407,21 @@ export function render(container) {
     const carrier = carrierInput.getCode();
 
     if (!guid) {
-      showToast('Please enter a device GUID.', 'warning');
+      showToast('Por favor, ingresa el GUID del dispositivo.', 'warning');
       guidInput.classList.add('input-error');
       return;
     }
     guidInput.classList.remove('input-error');
 
     if (!isValidGuid(guid)) {
-      showToast('Invalid GUID format. Must be a hex string of at least 15 characters.', 'error');
+      showToast('GUID inválido. Debe ser una cadena hexadecimal de al menos 15 caracteres.', 'error');
       guidInput.classList.add('input-error');
       return;
     }
     guidInput.classList.remove('input-error');
 
     if (!carrier) {
-      showToast('Please select a carrier.', 'warning');
+      showToast('Por favor, selecciona un carrier.', 'warning');
       return;
     }
 
@@ -430,7 +430,7 @@ export function render(container) {
     spinnerWrap.className = 'check-spinner-wrap';
     spinnerWrap.appendChild(createSpinner('lg'));
     const msg = document.createElement('span');
-    msg.textContent = 'Checking for updates…';
+    msg.textContent = 'Buscando actualizaciones…';
     spinnerWrap.appendChild(msg);
     results.appendChild(spinnerWrap);
     checkBtn.disabled = true;
@@ -451,7 +451,7 @@ export function render(container) {
       }
 
       results.appendChild(renderRawJSON(response.raw));
-      showToast('Check complete!', 'success');
+      showToast('¡Verificación completada!', 'success');
     } catch (err) {
       results.innerHTML = '';
       results.appendChild(createStatusCard('Error', `<p>${err.message || 'Request failed'}</p>`, 'error'));

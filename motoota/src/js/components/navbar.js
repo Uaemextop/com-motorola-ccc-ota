@@ -1,12 +1,12 @@
 import DOMPurify from 'dompurify';
 
 const NAV_LINKS = [
-  { label: 'Home', hash: '#home', icon: 'fa-house' },
-  { label: 'Check', hash: '#check', icon: 'fa-magnifying-glass' },
-  { label: 'Chain', hash: '#chain', icon: 'fa-link' },
-  { label: 'Scan', hash: '#scan', icon: 'fa-radar' },
+  { label: 'Inicio', hash: '#home', icon: 'fa-house' },
+  { label: 'Verificar', hash: '#check', icon: 'fa-magnifying-glass' },
+  { label: 'Cadena', hash: '#chain', icon: 'fa-link' },
+  { label: 'Escanear', hash: '#scan', icon: 'fa-radar' },
   { label: 'Carriers', hash: '#carriers', icon: 'fa-tower-cell' },
-  { label: 'Servers', hash: '#servers', icon: 'fa-server' },
+  { label: 'Servidores', hash: '#servers', icon: 'fa-server' },
   { label: 'Config', hash: '#config', icon: 'fa-gear' },
 ];
 

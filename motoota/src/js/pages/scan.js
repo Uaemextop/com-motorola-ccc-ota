@@ -127,7 +127,7 @@ export function render(container) {
 
   const header = document.createElement('div');
   header.className = 'section-header';
-  header.innerHTML = '<h2 class="section-title"><i class="fa-solid fa-radar" style="color:var(--color-cyan)"></i> Carrier Scanner</h2>';
+  header.innerHTML = '<h2 class="section-title"><i class="fa-solid fa-radar" style="color:var(--color-cyan)"></i> Escáner de Carriers</h2>';
   page.appendChild(header);
 
   const desc = document.createElement('p');
@@ -159,12 +159,12 @@ export function render(container) {
 
   const scanBtn = document.createElement('button');
   scanBtn.className = 'btn btn-primary btn-lg';
-  scanBtn.innerHTML = '<i class="fa-solid fa-play"></i> Start Scan';
+  scanBtn.innerHTML = '<i class="fa-solid fa-play"></i> Iniciar Escaneo';
   formRow.appendChild(scanBtn);
 
   const stopBtn = document.createElement('button');
   stopBtn.className = 'btn btn-danger btn-lg';
-  stopBtn.innerHTML = '<i class="fa-solid fa-stop"></i> Stop';
+  stopBtn.innerHTML = '<i class="fa-solid fa-stop"></i> Detener';
   stopBtn.style.display = 'none';
   formRow.appendChild(stopBtn);
 
@@ -231,10 +231,10 @@ export function render(container) {
     statsGrid.innerHTML = '';
     statsGrid.style.display = '';
     const items = [
-      { value: counts.open || 0, label: 'Open', cls: 'open' },
-      { value: counts.whitelisted || 0, label: 'Whitelisted', cls: 'whitelisted' },
-      { value: counts['no-content'] || 0, label: 'No Content', cls: 'no-content' },
-      { value: counts.error || 0, label: 'Errors', cls: 'errors' },
+      { value: counts.open || 0, label: 'Abiertos', cls: 'open' },
+      { value: counts.whitelisted || 0, label: 'Lista Blanca', cls: 'whitelisted' },
+      { value: counts['no-content'] || 0, label: 'Sin Contenido', cls: 'no-content' },
+      { value: counts.error || 0, label: 'Errores', cls: 'errors' },
     ];
     items.forEach(({ value, label, cls }) => {
       const stat = document.createElement('div');
@@ -310,7 +310,7 @@ export function render(container) {
     const guid = sanitizeInput(guidInput.value.trim());
 
     if (!guid || !isValidGuid(guid)) {
-      showToast('Please enter a valid GUID (hex, 15+ chars).', 'warning');
+      showToast('Ingresa un GUID válido (hexadecimal, 15+ caracteres).', 'warning');
       guidInput.classList.add('input-error');
       return;
     }
@@ -321,7 +321,7 @@ export function render(container) {
       : getCarriersByRegion(selectedRegion);
 
     if (carriersToScan.length === 0) {
-      showToast('No carriers found for the selected region.', 'warning');
+      showToast('No se encontraron carriers para la región seleccionada.', 'warning');
       return;
     }
 
@@ -338,7 +338,7 @@ export function render(container) {
     if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
 
     const progressBar = createProgressBar({
-      label: `Scanning 0/${carriersToScan.length}`,
+      label: `Escaneando 0/${carriersToScan.length}`,
       value: 0,
       max: carriersToScan.length,
       showPercent: true,
@@ -351,9 +351,9 @@ export function render(container) {
     const allResults = [];
 
     // Create live category panels
-    const openPanel = createCategoryPanel('Open', 'badge-open', []);
-    const wlPanel = createCategoryPanel('Whitelisted', 'badge-whitelisted', []);
-    const ncPanel = createCategoryPanel('No Content', 'badge-no-content', []);
+    const openPanel = createCategoryPanel('Abiertos', 'badge-open', []);
+    const wlPanel = createCategoryPanel('Lista Blanca', 'badge-whitelisted', []);
+    const ncPanel = createCategoryPanel('Sin Contenido', 'badge-no-content', []);
     liveResults.appendChild(openPanel);
     liveResults.appendChild(wlPanel);
     liveResults.appendChild(ncPanel);
@@ -381,7 +381,7 @@ export function render(container) {
 
           progressBar.setValue(completed);
           const labelEl = progressBar.element.querySelector('.moto-progress-label span:first-child');
-          if (labelEl) labelEl.textContent = `Scanning ${completed}/${total}`;
+          if (labelEl) labelEl.textContent = `Escaneando ${completed}/${total}`;
 
           // Append to live panel
           if (result.status === 'open') appendToPanel(openPanel, result, 'badge-open');
@@ -393,9 +393,9 @@ export function render(container) {
       });
 
       if (abortScan) {
-        showToast('Scan stopped.', 'info');
+        showToast('Escaneo detenido.', 'info');
       } else {
-        showToast(`Scan complete: ${allResults.length} carriers scanned.`, 'success');
+        showToast(`Escaneo completo: ${allResults.length} carriers analizados.`, 'success');
       }
 
       // Chart
@@ -407,28 +407,28 @@ export function render(container) {
 
       const tableTitle = document.createElement('h3');
       tableTitle.className = 'section-title';
-      tableTitle.textContent = 'Results';
+      tableTitle.textContent = 'Resultados';
       tableSection.appendChild(tableTitle);
 
       const table = createDataTable({
         columns: [
-          { key: 'code', label: 'Code', sortable: true },
-          { key: 'name', label: 'Name', sortable: true },
-          { key: 'region', label: 'Region', sortable: true },
+          { key: 'code', label: 'Código', sortable: true },
+          { key: 'name', label: 'Nombre', sortable: true },
+          { key: 'region', label: 'Región', sortable: true },
           {
-            key: 'status', label: 'Status', sortable: true,
+            key: 'status', label: 'Estado', sortable: true,
             render: (val) => {
               const cls = val === 'open' ? 'badge-open' : val === 'whitelisted' ? 'badge-whitelisted' : val === 'error' ? 'badge-no-content' : 'badge-no-content';
               return `<span class="badge ${cls}">${val}</span>`;
             },
           },
           {
-            key: 'size', label: 'Size', sortable: true,
+            key: 'size', label: 'Tamaño', sortable: true,
             render: (val) => val ? formatBytes(val) : '—',
           },
         ],
         pageSize: 20,
-        searchPlaceholder: 'Filter results…',
+        searchPlaceholder: 'Filtrar resultados…',
       });
 
       const tableData = allResults.map(r => ({
@@ -442,7 +442,7 @@ export function render(container) {
       tableSection.appendChild(table.element);
 
     } catch (err) {
-      showToast(`Scan error: ${err.message}`, 'error');
+      showToast(`Error en escaneo: ${err.message}`, 'error');
     } finally {
       scanBtn.style.display = '';
       stopBtn.style.display = 'none';
