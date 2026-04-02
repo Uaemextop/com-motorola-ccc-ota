@@ -1,29 +1,21 @@
-# moto-ota — Motorola OTA Downloader
+# Moto-OTA
 
-```
- ███╗   ███╗ ██████╗ ████████╗ ██████╗        ██████╗ ████████╗ █████╗
- ████╗ ████║██╔═══██╗╚══██╔══╝██╔═══██╗      ██╔═══██╗╚══██╔══╝██╔══██╗
- ██╔████╔██║██║   ██║   ██║   ██║   ██║█████╗██║   ██║   ██║   ███████║
- ██║╚██╔╝██║██║   ██║   ██║   ██║   ██║╚════╝██║   ██║   ██║   ██╔══██║
- ██║ ╚═╝ ██║╚██████╔╝   ██║   ╚██████╔╝      ╚██████╔╝   ██║   ██║  ██║
- ╚═╝     ╚═╝ ╚═════╝    ╚═╝    ╚═════╝        ╚═════╝    ╚═╝   ╚═╝  ╚═╝
-```
+**Download OTA updates for Motorola devices via CDS servers.**
 
-Download OTA updates for Motorola devices directly from CDS servers.
+A command-line tool and interactive TUI for querying Motorola's Content Delivery Service (CDS) servers, discovering available OTA firmware updates, and downloading them — with full update chain support, carrier scanning, and MD5 verification.
 
-Built by reverse-engineering the `com.motorola.ccc.ota` (MotoOta.apk)
-system updater and verified by direct server probing.
+![Moto-OTA TUI](https://github.com/user-attachments/assets/627f9544-84b5-412a-bd95-c55026ac652b)
 
 ## Features
 
-- **Interactive TUI** — keyboard-driven interface inspired by [penumbra](https://github.com/shomykohai/penumbra), with split-pane layouts, ASCII banner, arrow-key navigation and purple/blue colour theme
-- **CLI mode** — scriptable commands with `typer`
-- **Download** — full update chains with rich progress bars
-- **Chain walk** — enumerate all delta updates from base to latest
-- **All servers** — 6 CDS environments (production, staging, QA, dev)
-- **22+ carriers** — pre-configured carrier codes with region info
-- **Persistent config** — two JSON config files (`app.json` + `device.json`) saved at `~/.config/moto-ota/`
-- **Config menus** — interactive settings editor with field descriptions and valid option pickers
+- **Check for updates** — query a specific GUID + carrier for available OTA packages
+- **Walk update chains** — discover every intermediate update from current to latest
+- **Download OTA zips** — download full chains with progress bars and MD5 verification
+- **Carrier scanner** — scan 438 carriers in parallel to find which ones have open updates for a given GUID
+- **Interactive TUI** — penumbra-style full-screen interface with animated starfield, scrollable results, and keyboard navigation
+- **CLI mode** — scriptable commands with typer for automation and pipelines
+- **Persistent config** — save server, GUID, carrier, and device identity across sessions
+- **Cross-platform** — works on Windows, macOS, and Linux
 
 ## Installation
 
@@ -31,130 +23,98 @@ system updater and verified by direct server probing.
 pip install .
 ```
 
-## Quick Start
+Or install in development mode:
 
-### Interactive mode (TUI)
+```bash
+pip install -e .
+```
+
+### Requirements
+
+- Python 3.10+
+- Dependencies: `requests`, `rich`, `typer`, `tenacity`, `xmltodict`
+
+## Usage
+
+### Interactive TUI
+
+Launch the interactive interface (no arguments):
 
 ```bash
 moto-ota
 ```
 
-Launches a penumbra-style TUI with:
-- **↑/↓** arrow keys to navigate menus
-- **Enter** to select
-- **Esc** to go back
-- Split-pane layout: action list on left, description on right
-- Configuration editor with live field descriptions
+Navigate with arrow keys, Enter to select, Escape/q to go back. Results are scrollable with ↑/↓ arrows.
 
-### CLI commands
+### CLI Commands
 
 ```bash
-# Check for a single update
-moto-ota check --guid 0d5cc74421f2e8a --carrier amxmx
+# Check for an update
+moto-ota check --guid <GUID> --carrier <CARRIER>
 
 # Walk the full update chain
-moto-ota chain --guid 0d5cc74421f2e8a --carrier amxmx
+moto-ota chain --guid <GUID> --carrier <CARRIER>
 
 # Download all updates in the chain
-moto-ota download --guid 0d5cc74421f2e8a --carrier amxmx -d ./ota_files
+moto-ota download --guid <GUID> --carrier <CARRIER> --output ./downloads
+
+# Scan all carriers for a GUID
+moto-ota scan --guid <GUID>
 
 # List available servers
 moto-ota servers
 
-# List known carriers
-moto-ota carriers
+# List known carriers (optionally filter by region)
 moto-ota carriers --region LATAM
-moto-ota carriers --all  # include whitelisted
 
-# Show / edit configuration
+# View or edit configuration
 moto-ota config --show
-moto-ota config --paths
-moto-ota config --edit
+moto-ota config --set guid=<GUID> --set carrier=<CARRIER>
 ```
 
-## Configuration
+### Servers
 
-Two JSON config files stored at `~/.config/moto-ota/`:
+| Server             | Region |
+| ------------------ | ------ |
+| production-global  | Global |
+| production-prc     | China  |
+| staging            | Global |
+| qa                 | Global |
+| dev                | Global |
+| blurdev            | China  |
 
-### App config (`app.json`)
+### Configuration
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `server` | `production-prc` | CDS server environment |
-| `region` | `LATAM` | Your region (default carrier filter) |
-| `user_agent` | `com.motorola.ccc.ota` | HTTP User-Agent header |
-| `content_type` | `application/json; charset=utf-8` | HTTP Content-Type |
-| `timeout` | `30` | Request timeout in seconds |
-| `max_retries` | `3` | Connection retry attempts |
-| `verify_md5` | `true` | Verify downloads against MD5 |
+Configuration is stored in `~/.config/moto-ota/`:
 
-### Device config (`device.json`)
+- **`app.json`** — server, region, headers, timeout, retries, MD5 verification
+- **`device.json`** — GUID, carrier, model, serial, fingerprint, IMEI, and other device identity fields
 
-| Setting | Description | Routing? |
-|---------|-------------|----------|
-| `guid` | Device GUID (`ro.mot.build.guid`) | **YES** |
-| `carrier` | Carrier code (e.g. `amxmx`) | **YES** |
-| `triggered_by` | Trigger type (must be `user`) | **YES** |
-| `context` | URL context (`ota`/`fota`/`modem`) | **YES** |
-| `model` | Device model name | No |
-| `serial` | Serial number | No |
-| `fingerprint` | Build fingerprint | No |
-| `imei` | Primary IMEI | No |
-| `hardware` | Hardware platform | No |
+Edit via `moto-ota config` or through the TUI Configuration menu.
 
-> Fields marked "No" are sent for compatibility but the server ignores them.
-
-## Servers
-
-| Server | Host | Has Packages |
-|--------|------|:---:|
-| `production-prc` | moto-cds.svcmot.cn | Yes |
-| `production-global` | moto-cds.appspot.com | Yes |
-| `staging` | moto-cds-staging.appspot.com | No |
-| `qa` | moto-cds-qa.appspot.com | No |
-| `dev` | moto-cds-dev.appspot.com | No |
-| `blurdev` | ota-cn-sdc.blurdev.com | No |
-
-## Architecture
+## Project Structure
 
 ```
 moto_ota/
-├── __init__.py           # Package version
-├── __main__.py           # python -m moto_ota
-├── cli.py                # Typer CLI commands
-├── tui.py                # Rich interactive terminal UI
+├── __init__.py          # Package metadata
+├── __main__.py          # python -m moto_ota entry point
+├── cli.py               # Typer CLI commands
+├── tui.py               # Penumbra-style interactive TUI
 ├── config/
-│   ├── servers.py        # 6 CDS server endpoints
-│   ├── carriers.py       # 22 known carrier codes
-│   ├── app_config.py     # App settings model + field metadata
-│   ├── device_config.py  # Device params model + field metadata
-│   └── manager.py        # Read/write JSON config files
+│   ├── app_config.py    # App settings (server, region, etc.)
+│   ├── carriers.py      # 438 Motorola carrier codes
+│   ├── device_config.py # Device identity fields
+│   ├── manager.py       # JSON config persistence
+│   └── servers.py       # CDS server definitions
 ├── core/
-│   ├── client.py         # API client (requests + tenacity)
-│   └── downloader.py     # File downloads (rich progress)
+│   ├── client.py        # OTA HTTP client (check, chain)
+│   └── downloader.py    # Download with progress & MD5
 └── models/
-    ├── device.py          # Device payload builder
-    ├── request.py         # Minimal check request
-    └── response.py        # Server response parser
+    ├── device.py        # DeviceInfo dataclass
+    ├── request.py       # CDS request builder
+    └── response.py      # CDS response parser
 ```
-
-## Dependencies
-
-| Package | Purpose |
-|---------|---------|
-| `requests` | HTTP client |
-| `rich` | Terminal UI, tables, progress bars |
-| `typer` | CLI framework |
-| `tenacity` | Retry logic with back-off |
-| `xmltodict` | XML metadata parsing |
-
-## How It Works
-
-1. The CDS server routes updates by **carrier** and **GUID**
-2. Each update response contains `otaTargetSha1` -- the GUID of the next build
-3. Walking the chain: feed each target GUID as the next request until `proceed=false`
-4. Download URLs come in pairs (WIFI + CELL CDNs), expire after 600s
 
 ## License
 
-This tool is for educational and research purposes.
+MIT

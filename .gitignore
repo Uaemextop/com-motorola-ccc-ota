@@ -25,11 +25,8 @@ env/
 .DS_Store
 Thumbs.db
 
-# Project artifacts
+# Downloads & logs
 *.log
 downloads/
 output/
 chain_*.json
-
-# Old package
-ota_analyzer/
