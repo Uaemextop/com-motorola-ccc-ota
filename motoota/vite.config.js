@@ -1,41 +1,21 @@
 import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
 
 export default defineConfig({
-  /* ── Deployment ────────────────────────────────────────────────── */
+  plugins: [react(), tailwindcss()],
   base: '/com-motorola-ccc-ota/',
-
-  /* ── Build ─────────────────────────────────────────────────────── */
   build: {
     outDir: 'dist',
     sourcemap: false,
-    minify: 'esbuild',
-    rollupOptions: {
-      output: {
-        /* Keep asset filenames predictable */
-        assetFileNames: 'assets/[name]-[hash][extname]',
-        chunkFileNames: 'assets/[name]-[hash].js',
-        entryFileNames: 'assets/[name]-[hash].js',
-      },
-    },
   },
-
-  /* ── Resolve ───────────────────────────────────────────────────── */
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src/js'),
-      '@styles': resolve(__dirname, 'src/styles'),
+      '@': resolve(__dirname, 'src'),
     },
   },
-
-  /* ── CSS ────────────────────────────────────────────────────────── */
-  css: {
-    devSourcemap: true,
-  },
-
-  /* ── Dev Server ────────────────────────────────────────────────── */
   server: {
-    open: false,
     port: 5173,
   },
 });
