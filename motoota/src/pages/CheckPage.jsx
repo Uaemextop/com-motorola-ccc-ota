@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Download, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
 import Card from '@/components/Card';
@@ -20,6 +20,15 @@ export default function CheckPage() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [showRaw, setShowRaw] = useState(false);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setShowDropdown(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
   const filteredCarriers = carrierSearch ? searchCarriers(carrierSearch).slice(0, 40) : CARRIERS.slice(0, 40);
 
@@ -73,7 +82,7 @@ export default function CheckPage() {
           </div>
 
           {/* Carrier */}
-          <div className="relative">
+          <div className="relative" ref={dropdownRef}>
             <label className="block text-sm font-semibold text-white mb-1">Carrier <span className="text-red-400">*</span></label>
             <p className="text-xs text-slate-500 mb-2">Código del operador. Usa <code className="bg-[#00d4ff]/10 text-[#5eead4] px-1 rounded text-[10px]">adb shell getprop ro.carrier</code></p>
             <input

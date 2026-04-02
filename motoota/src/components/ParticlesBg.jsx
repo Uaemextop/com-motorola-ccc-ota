@@ -1,7 +1,31 @@
-import { useMemo } from 'react';
-import Particles from '@tsparticles/react';
+import { useCallback, useMemo, useState, useEffect } from 'react';
+
+let Particles = null;
+let loadSlim = null;
 
 export default function ParticlesBg() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [pMod, sMod] = await Promise.all([
+          import('@tsparticles/react'),
+          import('@tsparticles/slim'),
+        ]);
+        Particles = pMod.default;
+        loadSlim = sMod.loadSlim;
+        setReady(true);
+      } catch {
+        // tsparticles not available — skip background
+      }
+    })();
+  }, []);
+
+  const init = useCallback(async (engine) => {
+    if (loadSlim) await loadSlim(engine);
+  }, []);
+
   const options = useMemo(() => ({
     fullScreen: { enable: false },
     fpsLimit: 60,
@@ -15,9 +39,12 @@ export default function ParticlesBg() {
     detectRetina: true,
   }), []);
 
+  if (!ready || !Particles) return null;
+
   return (
     <Particles
       id="tsparticles"
+      init={init}
       options={options}
       className="fixed inset-0 z-0 pointer-events-none"
     />
