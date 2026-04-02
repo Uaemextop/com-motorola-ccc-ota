@@ -29,6 +29,12 @@ export interface CheckPayload {
   triggeredBy: string;
 }
 
+export interface ContentResource {
+  url: string;
+  tags: string[];
+  urlTtlSeconds: number;
+}
+
 export interface ContentInfo {
   sourceVersion: string;
   targetVersion: string;
@@ -38,6 +44,12 @@ export interface ContentInfo {
   updateType: string;
   md5: string;
   packageId: string;
+  model: string;
+  releaseNotes: string;
+  abInstallType: string;
+  deploymentPhase: string;
+  sourceGuid: string;
+  flavour: string;
 }
 
 export interface CheckResponse {
@@ -48,8 +60,10 @@ export interface CheckResponse {
   contextKey: string;
   trackingId: string;
   pollAfterSeconds: number;
+  smartUpdateBitmap: number;
   content: ContentInfo | null;
   downloadUrls: string[];
+  contentResources: ContentResource[];
   raw: Record<string, unknown>;
 }
 
@@ -66,6 +80,7 @@ export interface AppConfig {
   server: string;
   guid: string;
   carrier: string;
+  serial: string;
   context: string;
   region: string;
   timeout: number;

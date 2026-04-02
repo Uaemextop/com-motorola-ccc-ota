@@ -50,6 +50,7 @@ export const useAppStore = create<AppState>()(
         server: 'production-global',
         guid: '',
         carrier: '',
+        serial: '',
         context: 'ota',
         region: 'Global',
         timeout: 30,

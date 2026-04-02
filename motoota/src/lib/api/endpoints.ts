@@ -21,10 +21,10 @@ export function buildCheckURL(host: string, context: string, guid: string): stri
 export function buildPayload(
   carrier: string,
   guid: string,
-  options: { region?: string; triggeredBy?: string } = {},
+  options: { region?: string; triggeredBy?: string; serial?: string } = {},
 ): CheckPayload {
   return {
-    id: 'x',
+    id: options.serial || 'x',
     deviceInfo: { country: '', region: options.region || 'US' },
     extraInfo: {
       carrier,

@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils';
 const schema = z.object({
   guid: z.string().optional(),
   carrier: z.string().optional(),
+  serial: z.string().optional(),
   server: z.string(),
   context: z.string(),
   region: z.string(),
@@ -54,6 +55,7 @@ export default function ConfigPage() {
       server: 'production-global',
       guid: '',
       carrier: '',
+      serial: '',
       context: 'ota',
       region: 'Global',
       timeout: 30,
@@ -91,6 +93,15 @@ export default function ConfigPage() {
               {...register('carrier')}
               placeholder="ej: amxmx"
               className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+            />
+          </FieldGroup>
+
+          {/* Serial */}
+          <FieldGroup icon={Radio} label="Número de serie" description="Número de serie del dispositivo (ej: ZY32LNRW97) — el servidor lo ignora para carriers abiertos">
+            <input
+              {...register('serial')}
+              placeholder="ej: ZY32LNRW97"
+              className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 font-mono text-sm text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
           </FieldGroup>
 
