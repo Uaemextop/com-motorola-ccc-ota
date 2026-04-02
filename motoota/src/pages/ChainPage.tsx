@@ -113,9 +113,26 @@ export default function ChainPage() {
             animate={{ opacity: 1 }}
             className="space-y-3"
           >
-            <p className="text-sm text-gray-400">
-              {chain.length} paso{chain.length > 1 ? 's' : ''} en la cadena
-            </p>
+            {/* Chain summary - matching Python CLI output */}
+            <GlassCard className="p-4">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                <span className="text-gray-400">
+                  <span className="font-semibold text-white">{chain.length}</span> paso{chain.length > 1 ? 's' : ''} en la cadena
+                </span>
+                <span className="text-gray-600">·</span>
+                <span className="text-gray-400">
+                  Base: <span className="font-mono text-white">{chain[0]?.content?.sourceVersion}</span>
+                </span>
+                <span className="text-violet-400">→</span>
+                <span className="text-gray-400">
+                  Última: <span className="font-mono font-semibold text-emerald-400">{chain[chain.length - 1]?.content?.targetVersion}</span>
+                </span>
+                <span className="text-gray-600">·</span>
+                <span className="font-semibold text-white">
+                  {(chain.reduce((acc, s) => acc + (s.content?.sizeBytes || 0), 0) / (1024 * 1024)).toFixed(1)} MB total
+                </span>
+              </div>
+            </GlassCard>
 
             {chain.map((step, i) => (
               <motion.div

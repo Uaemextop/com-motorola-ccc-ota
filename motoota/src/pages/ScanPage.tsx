@@ -84,6 +84,16 @@ export default function ScanPage() {
     return counts;
   }, [scanResults]);
 
+  const versionComparison = useMemo(() => {
+    const versions = new Set<string>();
+    scanResults.forEach((r) => {
+      if (r.status === 'open' && r.response?.content?.targetVersion) {
+        versions.add(r.response.content.targetVersion);
+      }
+    });
+    return Array.from(versions).sort();
+  }, [scanResults]);
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       {/* Form */}
@@ -170,6 +180,42 @@ export default function ScanPage() {
               })}
             </div>
 
+            {/* Version comparison - like Python CLI */}
+            {versionComparison.length > 0 && !scanning && (
+              <GlassCard className="p-4">
+                {versionComparison.length === 1 ? (
+                  <p className="flex items-center gap-2 text-sm">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    <span className="text-gray-400">
+                      Todos los carriers abiertos tienen versión:{' '}
+                      <span className="font-mono font-semibold text-emerald-400">
+                        {versionComparison[0]}
+                      </span>
+                    </span>
+                  </p>
+                ) : (
+                  <div>
+                    <p className="flex items-center gap-2 text-sm">
+                      <AlertTriangle className="h-4 w-4 text-amber-400" />
+                      <span className="font-semibold text-amber-400">
+                        ⚠ Múltiples versiones OTA detectadas:
+                      </span>
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {versionComparison.map((v) => (
+                        <span
+                          key={v}
+                          className="rounded-full bg-amber-500/10 px-3 py-1 font-mono text-xs text-amber-300"
+                        >
+                          {v}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </GlassCard>
+            )}
+
             {/* Filters */}
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2 text-sm text-gray-400">
@@ -207,7 +253,8 @@ export default function ScanPage() {
                       <th className="px-4 py-3">Nombre</th>
                       <th className="px-4 py-3">Región</th>
                       <th className="px-4 py-3">Estado</th>
-                      <th className="px-4 py-3">Versión</th>
+                      <th className="px-4 py-3">Versión OTA</th>
+                      <th className="px-4 py-3 text-right">Tamaño</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
@@ -230,13 +277,27 @@ export default function ScanPage() {
                         <td className="px-4 py-2.5 font-mono text-xs">
                           {result.response?.content?.targetVersion || '—'}
                         </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-xs text-gray-500">
+                          {result.response?.content?.sizeMB
+                            ? `${result.response.content.sizeMB} MB`
+                            : '—'}
+                        </td>
                       </motion.tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div className="border-t border-white/5 px-4 py-2 text-xs text-gray-500">
-                Mostrando {filteredResults.length} de {scanResults.length} resultados
+              <div className="border-t border-white/5 px-4 py-2.5 text-xs text-gray-500">
+                <span>
+                  Escaneados {scanResults.length} carriers:{' '}
+                  <span className="font-semibold text-emerald-400">{statusCounts.open} abiertos</span>,{' '}
+                  <span className="font-semibold text-amber-400">{statusCounts.whitelisted} whitelisted</span>,{' '}
+                  {statusCounts['no-content']} sin contenido
+                  {statusCounts.error > 0 && (
+                    <>, <span className="text-red-400">{statusCounts.error} errores</span></>
+                  )}
+                  {' '}· Mostrando {filteredResults.length}
+                </span>
               </div>
             </GlassCard>
           </motion.div>
