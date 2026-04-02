@@ -183,6 +183,16 @@
   font-size: var(--font-size-xs);
   color: var(--color-text-disabled);
   margin-top: var(--space-1);
+  line-height: 1.5;
+}
+
+.input-hint code {
+  background: rgba(0, 212, 255, 0.08);
+  color: var(--color-bright-cyan);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  border: none;
 }
 
 /* ── Badge ──────────────────────────────────────────────────────── */

@@ -6,8 +6,10 @@ function injectFooterStyles() {
   style.id = 'moto-footer-styles';
   style.textContent = `
     .moto-footer {
-      background: var(--color-surface, #131a2b);
-      border-top: 1px solid var(--color-border, #2a3450);
+      background: rgba(19, 26, 43, 0.6);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-top: 1px solid rgba(0, 212, 255, 0.1);
       padding: var(--space-4, 16px) var(--space-6, 24px);
       display: flex;
       align-items: center;

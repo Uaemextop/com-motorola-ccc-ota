@@ -118,6 +118,12 @@
 }
 
 /* Main content area */
+.main-content {
+  padding-top: 72px; /* navbar height + spacing */
+  padding-bottom: var(--space-8);
+  min-height: calc(100vh - 56px);
+}
+
 .main {
   flex: 1;
   padding: var(--space-8) 0;

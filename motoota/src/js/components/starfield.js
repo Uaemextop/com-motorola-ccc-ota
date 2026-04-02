@@ -1,13 +1,18 @@
 const LAYER_COUNT = 3;
-const STAR_COUNTS = [80, 50, 30]; // near → far
+const STAR_COUNTS = [100, 60, 35]; // near → far
 const STAR_SPEEDS = [0.3, 0.15, 0.07];
 const STAR_SIZES = [2, 1.5, 1];
 const STAR_COLORS = ['#ffffff', '#00d4ff', 'rgba(255,255,255,0.6)'];
 
+/* Floating particles — larger, slower, semi-transparent orbs */
+const PARTICLE_COUNT = 8;
+
 let animationId = null;
 let stars = [];
+let particles = [];
 let canvasRef = null;
 let ctxRef = null;
+let frameCount = 0;
 
 function createStars(width, height) {
   stars = [];
@@ -20,8 +25,22 @@ function createStars(width, height) {
         speed: STAR_SPEEDS[layer] * (0.7 + Math.random() * 0.6),
         color: STAR_COLORS[layer],
         opacity: 0.3 + Math.random() * 0.7,
+        twinklePhase: Math.random() * Math.PI * 2,
+        twinkleSpeed: 0.01 + Math.random() * 0.02,
       });
     }
+  }
+  particles = [];
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    particles.push({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      size: 30 + Math.random() * 70,
+      vx: (Math.random() - 0.5) * 0.15,
+      vy: (Math.random() - 0.5) * 0.15,
+      hue: Math.random() > 0.5 ? 190 : 220, // cyan or blue range
+      opacity: 0.015 + Math.random() * 0.025,
+    });
   }
 }
 
@@ -43,11 +62,33 @@ function draw() {
   if (!ctxRef || !canvasRef) return;
   const w = canvasRef.clientWidth;
   const h = canvasRef.clientHeight;
+  frameCount++;
 
   ctxRef.clearRect(0, 0, w, h);
 
+  // Draw floating particles (background orbs)
+  particles.forEach((p) => {
+    const gradient = ctxRef.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+    gradient.addColorStop(0, `hsla(${p.hue}, 100%, 50%, ${p.opacity})`);
+    gradient.addColorStop(1, `hsla(${p.hue}, 100%, 50%, 0)`);
+    ctxRef.globalAlpha = 1;
+    ctxRef.fillStyle = gradient;
+    ctxRef.beginPath();
+    ctxRef.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctxRef.fill();
+
+    p.x += p.vx;
+    p.y += p.vy;
+    if (p.x < -p.size) p.x = w + p.size;
+    if (p.x > w + p.size) p.x = -p.size;
+    if (p.y < -p.size) p.y = h + p.size;
+    if (p.y > h + p.size) p.y = -p.size;
+  });
+
+  // Draw stars with twinkle
   stars.forEach((star) => {
-    ctxRef.globalAlpha = star.opacity;
+    const twinkle = 0.5 + 0.5 * Math.sin(star.twinklePhase + frameCount * star.twinkleSpeed);
+    ctxRef.globalAlpha = star.opacity * twinkle;
     ctxRef.fillStyle = star.color;
     ctxRef.beginPath();
     ctxRef.arc(star.x, star.y, star.size, 0, Math.PI * 2);
@@ -95,6 +136,8 @@ export function destroyStarfield() {
   }
   window.removeEventListener('resize', resizeCanvas);
   stars = [];
+  particles = [];
+  frameCount = 0;
   canvasRef = null;
   ctxRef = null;
 }

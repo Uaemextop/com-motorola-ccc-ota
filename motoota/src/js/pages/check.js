@@ -170,12 +170,18 @@ const CONTEXTS = [
   { value: 'modem', label: 'Modem' },
 ];
 
-function createFormField(labelText, element) {
+function createFormField(labelText, element, hint) {
   const group = document.createElement('div');
   group.className = 'input-group';
   const label = document.createElement('label');
   label.textContent = labelText;
   group.appendChild(label);
+  if (hint) {
+    const hintEl = document.createElement('div');
+    hintEl.className = 'input-hint';
+    hintEl.innerHTML = hint;
+    group.appendChild(hintEl);
+  }
   group.appendChild(element);
   return group;
 }
@@ -330,7 +336,7 @@ export function render(container) {
   page.appendChild(header);
 
   const desc = document.createElement('p');
-  desc.textContent = 'Query the Motorola CDS server to check if an OTA update is available for a specific device GUID and carrier.';
+  desc.textContent = 'Consulta el servidor CDS de Motorola para verificar si hay una actualización OTA disponible para un GUID y carrier específicos.';
   page.appendChild(desc);
 
   const deviceConfig = loadDeviceConfig();
@@ -345,11 +351,13 @@ export function render(container) {
   guidInput.className = 'input';
   guidInput.placeholder = 'e.g. a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0';
   guidInput.value = deviceConfig.guid || '';
-  form.appendChild(createFormField('Device GUID', guidInput));
+  form.appendChild(createFormField('Device GUID', guidInput,
+    'Obtén el GUID con: <code>adb shell getprop ro.mot.build.guid</code> — es un hash hexadecimal de 15+ caracteres del firmware actual.'));
 
   // Carrier
   const carrierInput = createCarrierInput();
-  form.appendChild(createFormField('Carrier', carrierInput.element));
+  form.appendChild(createFormField('Carrier', carrierInput.element,
+    'Código del operador. Usa <code>adb shell getprop ro.carrier</code>. Para desbloqueados: retus (USA), retla (LATAM), reteu (Europa).'));
 
   // Server
   const serverSelect = document.createElement('select');
@@ -361,7 +369,8 @@ export function render(container) {
     if (s.status !== 'active') opt.textContent += ' [inactive]';
     serverSelect.appendChild(opt);
   });
-  form.appendChild(createFormField('Server', serverSelect));
+  form.appendChild(createFormField('Server', serverSelect,
+    'Servidor CDS de Motorola. Usa Production Global para la mayoría de dispositivos.'));
 
   // Context
   const contextSelect = document.createElement('select');
@@ -373,7 +382,8 @@ export function render(container) {
     contextSelect.appendChild(opt);
   });
   contextSelect.value = deviceConfig.context || 'ota';
-  form.appendChild(createFormField('Context', contextSelect));
+  form.appendChild(createFormField('Context', contextSelect,
+    'OTA = sistema operativo, FOTA = firmware de radio, Modem = actualizaciones del módem.'));
 
   // Actions
   const actions = document.createElement('div');

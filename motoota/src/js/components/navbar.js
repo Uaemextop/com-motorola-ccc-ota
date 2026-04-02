@@ -21,8 +21,10 @@ function injectNavbarStyles() {
       left: 0;
       right: 0;
       z-index: var(--z-sticky, 200);
-      background: #131a2b;
-      border-bottom: 2px solid var(--color-cyan, #00d4ff);
+      background: rgba(19, 26, 43, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(0, 212, 255, 0.2);
       padding: 0 var(--space-6, 24px);
       display: flex;
       align-items: center;
@@ -105,8 +107,10 @@ function injectNavbarStyles() {
         left: 0;
         right: 0;
         flex-direction: column;
-        background: #131a2b;
-        border-bottom: 2px solid var(--color-cyan, #00d4ff);
+        background: rgba(19, 26, 43, 0.95);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border-bottom: 1px solid rgba(0, 212, 255, 0.2);
         padding: var(--space-2, 8px) var(--space-4, 16px);
         gap: 0;
       }
@@ -138,7 +142,7 @@ export function createNavbar() {
   brand.className = 'moto-navbar-brand';
   brand.href = '#home';
   brand.innerHTML = DOMPurify.sanitize(
-    '<i class="fa-solid fa-mobile-screen"></i> MotoOTA',
+    '<svg style="width:24px;height:24px;color:#00d4ff" aria-hidden="true"><use href="icons.svg#icon-logo"/></svg> MotoOTA',
   );
 
   const ul = document.createElement('ul');

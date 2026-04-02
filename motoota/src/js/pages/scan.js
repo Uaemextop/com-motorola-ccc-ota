@@ -131,7 +131,7 @@ export function render(container) {
   page.appendChild(header);
 
   const desc = document.createElement('p');
-  desc.textContent = 'Scan all carriers for a given GUID to find which ones have available OTA updates.';
+  desc.textContent = 'Escanea todos los carriers para un GUID dado y descubre cuáles tienen actualizaciones OTA disponibles.';
   page.appendChild(desc);
 
   const deviceConfig = loadDeviceConfig();
@@ -144,12 +144,16 @@ export function render(container) {
   guidGroup.className = 'input-group';
   const guidLabel = document.createElement('label');
   guidLabel.textContent = 'Device GUID';
+  const guidHint = document.createElement('div');
+  guidHint.className = 'input-hint';
+  guidHint.innerHTML = 'GUID de tu firmware. Obtén con: <code>adb shell getprop ro.mot.build.guid</code>';
   const guidInput = document.createElement('input');
   guidInput.type = 'text';
   guidInput.className = 'input';
-  guidInput.placeholder = 'Device firmware GUID (hex string)';
+  guidInput.placeholder = 'GUID hexadecimal del firmware (15+ caracteres)';
   guidInput.value = deviceConfig.guid || '';
   guidGroup.appendChild(guidLabel);
+  guidGroup.appendChild(guidHint);
   guidGroup.appendChild(guidInput);
   formRow.appendChild(guidGroup);
 
