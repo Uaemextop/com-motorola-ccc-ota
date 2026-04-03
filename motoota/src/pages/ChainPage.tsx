@@ -1,6 +1,6 @@
 /* ── Chain Page ─────────────────────────────────────────────── */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -42,10 +42,15 @@ export default function ChainPage() {
     handleSubmit,
     control,
     formState: { errors },
+    reset,
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { guid: config.guid, carrier: config.carrier },
   });
+
+  useEffect(() => {
+    reset({ guid: config.guid, carrier: config.carrier });
+  }, [config.guid, config.carrier, reset]);
 
   const onSubmit = async (data: FormData) => {
     updateConfig({ guid: data.guid, carrier: data.carrier });

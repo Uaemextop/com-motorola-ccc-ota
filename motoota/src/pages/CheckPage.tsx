@@ -1,6 +1,6 @@
 /* ── Check Page ─────────────────────────────────────────────── */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -61,6 +61,7 @@ export default function CheckPage() {
     control,
     formState: { errors },
     watch,
+    reset,
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -69,6 +70,10 @@ export default function CheckPage() {
       serial: config.serial,
     },
   });
+
+  useEffect(() => {
+    reset({ guid: config.guid, carrier: config.carrier, serial: config.serial });
+  }, [config.guid, config.carrier, config.serial, reset]);
 
   const watchedGuid = watch('guid');
   const watchedCarrier = watch('carrier');

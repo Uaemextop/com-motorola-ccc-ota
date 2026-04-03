@@ -92,6 +92,7 @@ export function useCarrierScan() {
   const { config, setScanResults, setScanProgress, setLoading, setError } =
     useAppStore();
   const [scanning, setScanning] = useState(false);
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scan = useCallback(
     async (guid?: string, carriers?: Carrier[], walkChains = true) => {
@@ -110,6 +111,16 @@ export function useCarrierScan() {
       try {
         const server = getServerById(config.server);
         const accumulated: ScanResult[] = [];
+
+        const scheduleFlush = () => {
+          if (!flushTimer.current) {
+            flushTimer.current = setTimeout(() => {
+              flushTimer.current = null;
+              setScanResults([...accumulated]);
+            }, 150);
+          }
+        };
+
         const results = await scanCarriers(g, carriers || [], {
           host: server?.host,
           context: config.context,
@@ -118,13 +129,16 @@ export function useCarrierScan() {
           onProgress: (completed: number, total: number, result: ScanResult) => {
             setScanProgress({ completed, total });
             accumulated.push(result);
-            setScanResults([...accumulated]);
+            scheduleFlush();
           },
-          onChainProgress: (_carrierCode: string, _chain) => {
-            // Update scan results in-place when a chain completes
-            setScanResults([...accumulated]);
+          onChainProgress: () => {
+            scheduleFlush();
           },
         });
+        if (flushTimer.current) {
+          clearTimeout(flushTimer.current);
+          flushTimer.current = null;
+        }
         setScanResults(results);
         return results;
       } catch (err) {
