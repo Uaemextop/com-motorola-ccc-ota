@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "homepage": "https://Uaemextop.github.io/com-motorola-ccc-ota/",
+  "homepage": "https://motoota.echosmart.me/",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",

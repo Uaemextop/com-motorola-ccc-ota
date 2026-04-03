@@ -13,5 +13,8 @@
   },
   "build": {
     "command": "cd motoota && npm ci && npm run build"
-  }
+  },
+  "routes": [
+    { "pattern": "motoota.echosmart.me", "custom_domain": true }
+  ]
 }

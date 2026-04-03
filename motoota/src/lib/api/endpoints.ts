@@ -7,7 +7,7 @@ import type { CheckPayload } from '@/lib/types';
  * When the app runs on this same domain (Workers deployment), requests are same-origin.
  * When running elsewhere (GitHub Pages), requests go cross-origin with CORS.
  */
-const WORKER_ORIGIN = 'https://com-motorola-ccc-ota.ealvarado2677.workers.dev';
+const WORKER_ORIGIN = 'https://motoota.echosmart.me';
 
 /**
  * Resolve the API check endpoint URL.

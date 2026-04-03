@@ -33,7 +33,7 @@ export default defineConfig({
     open: false,
     proxy: {
       '/api': {
-        target: 'https://com-motorola-ccc-ota.ealvarado2677.workers.dev',
+        target: 'https://motoota.echosmart.me',
         changeOrigin: true,
       },
     },

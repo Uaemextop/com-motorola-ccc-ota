@@ -350,13 +350,13 @@ export default function ScanPage() {
                 ))}
               </select>
               <div className="relative flex-1">
-                <SearchIcon className="absolute <button onClick={() => toggleSort('carrier')} className="flex items-center gap-1 hover:text-gray-300"><span>Carrier</span><SortIcon field="carrier" /></button></th>
-                      <th className="px-4 py-3"><button onClick={() => toggleSort('name')} className="flex items-center gap-1 hover:text-gray-300"><span>Nombre</span><SortIcon field="name" /></button></th>
-                      <th className="px-4 py-3"><button onClick={() => toggleSort('region')} className="flex items-center gap-1 hover:text-gray-300"><span>Región</span><SortIcon field="region" /></button></th>
-                      <th className="px-4 py-3"><button onClick={() => toggleSort('status')} className="flex items-center gap-1 hover:text-gray-300"><span>Estado</span><SortIcon field="status" /></button></th>
-                      <th className="px-4 py-3"><button onClick={() => toggleSort('version')} className="flex items-center gap-1 hover:text-gray-300"><span>Versión OTA</span><SortIcon field="version" /></button></th>
-                      <th className="px-4 py-3"><button onClick={() => toggleSort('chain')} className="flex items-center gap-1 hover:text-gray-300"><span>Cadena</span><SortIcon field="chain" /></button></th>
-                      <th className="px-4 py-3 text-right"><button onClick={() => toggleSort('size')} className="ml-auto flex items-center gap-1 hover:text-gray-300"><span>Tamaño</span><SortIcon field="size" /></button>
+                <SearchIcon className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500" />
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar carrier..."
+                  className="w-full rounded-lg border border-white/10 bg-white/[0.03] py-1.5 pl-9 pr-3 text-xs text-white placeholder:text-gray-600 focus:outline-none"
+                />
               </div>
             </div>
 
@@ -366,13 +366,13 @@ export default function ScanPage() {
                 <table className="w-full text-sm">
                   <thead className="sticky top-0 z-10 border-b border-white/5 bg-[#0d0d1a]/95 backdrop-blur">
                     <tr className="text-left text-xs uppercase tracking-wider text-gray-500">
-                      <th className="px-4 py-3">Carrier</th>
-                      <th className="px-4 py-3">Nombre</th>
-                      <th className="px-4 py-3">Región</th>
-                      <th className="px-4 py-3">Estado</th>
-                      <th className="px-4 py-3">Versión OTA</th>
-                      <th className="px-4 py-3">Cadena</th>
-                      <th className="px-4 py-3 text-right">Tamaño</th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('carrier')} className="flex items-center gap-1 hover:text-gray-300"><span>Carrier</span><SortIcon field="carrier" /></button></th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('name')} className="flex items-center gap-1 hover:text-gray-300"><span>Nombre</span><SortIcon field="name" /></button></th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('region')} className="flex items-center gap-1 hover:text-gray-300"><span>Región</span><SortIcon field="region" /></button></th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('status')} className="flex items-center gap-1 hover:text-gray-300"><span>Estado</span><SortIcon field="status" /></button></th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('version')} className="flex items-center gap-1 hover:text-gray-300"><span>Versión OTA</span><SortIcon field="version" /></button></th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('chain')} className="flex items-center gap-1 hover:text-gray-300"><span>Cadena</span><SortIcon field="chain" /></button></th>
+                      <th className="px-4 py-3 text-right"><button onClick={() => toggleSort('size')} className="ml-auto flex items-center gap-1 hover:text-gray-300"><span>Tamaño</span><SortIcon field="size" /></button></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
