@@ -13,6 +13,7 @@ import {
   Timer,
   Hash,
   Radio,
+  Wifi,
 } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
 import CarrierSelect from '@/components/ui/CarrierSelect';
@@ -29,6 +30,7 @@ const schema = z.object({
   context: z.string(),
   region: z.string(),
   timeout: z.number().min(5).max(120),
+  downloadNetwork: z.enum(['wifi', 'cell']),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -61,6 +63,7 @@ export default function ConfigPage() {
       context: 'ota',
       region: 'Global',
       timeout: 30,
+      downloadNetwork: 'wifi' as const,
     };
     updateConfig(defaults);
     reset(defaults);
@@ -147,6 +150,17 @@ export default function ConfigPage() {
               max={120}
               className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
+          </FieldGroup>
+
+          {/* Download Network */}
+          <FieldGroup icon={Wifi} label="Red de descarga" description="Tipo de red preferida para los enlaces de descarga (filtra los recursos del servidor)">
+            <select
+              {...register('downloadNetwork')}
+              className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+            >
+              <option value="wifi" className="bg-[#1a1a2e]">Wi-Fi</option>
+              <option value="cell" className="bg-[#1a1a2e]">Celular</option>
+            </select>
           </FieldGroup>
 
           {/* Actions */}

@@ -76,6 +76,8 @@ export interface ScanResult {
   error: string | null;
 }
 
+export type DownloadNetwork = 'wifi' | 'cell';
+
 export interface AppConfig {
   server: string;
   guid: string;
@@ -84,6 +86,7 @@ export interface AppConfig {
   context: string;
   region: string;
   timeout: number;
+  downloadNetwork: DownloadNetwork;
 }
 
 export type Page = 'home' | 'check' | 'chain' | 'scan' | 'servers' | 'config';

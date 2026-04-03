@@ -54,6 +54,7 @@ export const useAppStore = create<AppState>()(
         context: 'ota',
         region: 'Global',
         timeout: 30,
+        downloadNetwork: 'wifi',
       },
       updateConfig: (partial) =>
         set((s) => ({ config: { ...s.config, ...partial } })),

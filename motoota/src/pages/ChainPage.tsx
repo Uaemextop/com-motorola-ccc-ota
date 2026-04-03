@@ -13,8 +13,6 @@ import {
   ChevronDown,
   X,
   FileText,
-  Hash,
-  Shield,
   Tag,
   Clock,
   ExternalLink,
@@ -25,7 +23,7 @@ import Spinner from '@/components/ui/Spinner';
 import { showToast } from '@/components/ui/Toast';
 import { useChainWalk } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
-import { formatBytes, cn } from '@/lib/utils';
+import { formatBytes, cn, sanitizeReleaseNotes } from '@/lib/utils';
 import type { CheckResponse } from '@/lib/types';
 
 const schema = z.object({
@@ -33,33 +31,6 @@ const schema = z.object({
   carrier: z.string().min(2),
 });
 type FormData = z.infer<typeof schema>;
-
-/* ── Sanitize release notes HTML ─────────────────────────────── */
-const ALLOWED_TAGS = new Set([
-  'h1', 'h2', 'h3', 'h4', 'p', 'br', 'b', 'i', 'strong', 'em', 'ul', 'ol', 'li', 'a',
-]);
-
-function sanitizeReleaseNotes(html: string): string {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  function walk(node: Node): string {
-    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
-    if (node.nodeType !== Node.ELEMENT_NODE) return '';
-    const el = node as Element;
-    const tag = el.tagName.toLowerCase();
-    if (!ALLOWED_TAGS.has(tag)) {
-      let inner = '';
-      el.childNodes.forEach((c) => { inner += walk(c); });
-      return inner;
-    }
-    let inner = '';
-    el.childNodes.forEach((c) => { inner += walk(c); });
-    if (tag === 'br') return '<br/>';
-    return `<${tag}>${inner}</${tag}>`;
-  }
-  let result = '';
-  doc.body.childNodes.forEach((c) => { result += walk(c); });
-  return result;
-}
 
 export default function ChainPage() {
   const { config, chain, updateConfig } = useAppStore();
@@ -283,17 +254,22 @@ export default function ChainPage() {
                     )}
 
                     {/* Download URLs */}
-                    {selected.contentResources.length > 0 && (
+                    {selected.contentResources.length > 0 && (() => {
+                      const networkTag = config.downloadNetwork === 'wifi' ? 'WIFI' : 'CELL';
+                      const filtered = selected.contentResources.filter((r) =>
+                        r.tags.some((t) => t.toUpperCase() === networkTag),
+                      );
+                      const primaryUrl = filtered[0]?.url || selected.downloadUrls[0];
+                      return (
                       <div className="mb-4">
                         <h5 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-gray-400">
                           <Download className="h-3.5 w-3.5 text-emerald-400" />
-                          Descargas ({selected.contentResources.length})
+                          Descargas ({filtered.length})
                         </h5>
-                        {selected.downloadUrls[0] && (
+                        {primaryUrl && (
                           <a
-                            href={selected.downloadUrls[0]}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                            href={primaryUrl}
+                            download
                             className={cn(
                               'mb-2 flex items-center justify-center gap-2 rounded-xl px-5 py-2 text-xs font-semibold',
                               'bg-gradient-to-r from-emerald-600 to-green-600 text-white',
@@ -305,7 +281,7 @@ export default function ChainPage() {
                           </a>
                         )}
                         <div className="space-y-1">
-                          {selected.contentResources.map((resource, j) => (
+                          {filtered.map((resource, j) => (
                             <div key={j} className="flex items-center gap-2 rounded-lg bg-white/[0.02] px-3 py-1.5 text-xs">
                               <div className="flex items-center gap-1">
                                 {resource.tags.map((tag) => (
@@ -317,7 +293,7 @@ export default function ChainPage() {
                                   </span>
                                 )}
                               </div>
-                              <a href={resource.url} target="_blank" rel="noopener noreferrer" className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
+                              <a href={resource.url} download className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
                                 {resource.url}
                               </a>
                               <button onClick={() => copyToClipboard(resource.url)} className="shrink-0 text-gray-500 hover:text-white">
@@ -330,7 +306,8 @@ export default function ChainPage() {
                           ))}
                         </div>
                       </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Release notes */}
                     {selected.content.releaseNotes && (

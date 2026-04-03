@@ -16,8 +16,6 @@ import {
   ExternalLink,
   FileText,
   Smartphone,
-  Tag,
-  Shield,
   Hash,
   Radio,
   Clock,
@@ -33,7 +31,7 @@ import { useOtaCheck } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
 import { classifyCarrierStatus } from '@/lib/api/response';
 import { getServerById } from '@/lib/api/servers';
-import { formatBytes, cn } from '@/lib/utils';
+import { formatBytes, cn, sanitizeReleaseNotes } from '@/lib/utils';
 import { DEFAULT_HEADERS, buildCheckURL, buildPayload } from '@/lib/api/endpoints';
 import { getLastRequestLog } from '@/lib/api/client';
 
@@ -46,33 +44,6 @@ const schema = z.object({
   serial: z.string().optional(),
 });
 type FormData = z.infer<typeof schema>;
-
-/* ── Sanitize release notes HTML ─────────────────────────────── */
-const ALLOWED_TAGS = new Set([
-  'h1', 'h2', 'h3', 'h4', 'p', 'br', 'b', 'i', 'strong', 'em', 'ul', 'ol', 'li', 'a',
-]);
-
-function sanitizeReleaseNotes(html: string): string {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  function walk(node: Node): string {
-    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
-    if (node.nodeType !== Node.ELEMENT_NODE) return '';
-    const el = node as Element;
-    const tag = el.tagName.toLowerCase();
-    if (!ALLOWED_TAGS.has(tag)) {
-      let inner = '';
-      el.childNodes.forEach((c) => { inner += walk(c); });
-      return inner;
-    }
-    let inner = '';
-    el.childNodes.forEach((c) => { inner += walk(c); });
-    if (tag === 'br') return '<br/>';
-    return `<${tag}>${inner}</${tag}>`;
-  }
-  let result = '';
-  doc.body.childNodes.forEach((c) => { result += walk(c); });
-  return result;
-}
 
 export default function CheckPage() {
   const { config, lastCheck, error, updateConfig, setLastCheck, setError } = useAppStore();
@@ -408,17 +379,22 @@ export default function CheckPage() {
             </GlassCard>
 
             {/* Download */}
-            {lastCheck.hasUpdate && lastCheck.contentResources.length > 0 && (
+            {lastCheck.hasUpdate && lastCheck.contentResources.length > 0 && (() => {
+              const networkTag = config.downloadNetwork === 'wifi' ? 'WIFI' : 'CELL';
+              const filtered = lastCheck.contentResources.filter((r) =>
+                r.tags.some((t) => t.toUpperCase() === networkTag),
+              );
+              const primaryUrl = filtered[0]?.url || lastCheck.downloadUrls[0];
+              return (
               <GlassCard className="p-5">
                 <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-300">
                   <Download className="h-4 w-4 text-emerald-400" />
-                  Descargas ({lastCheck.contentResources.length})
+                  Descargas ({filtered.length})
                 </h4>
-                {lastCheck.downloadUrls[0] && (
+                {primaryUrl && (
                   <a
-                    href={lastCheck.downloadUrls[0]}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href={primaryUrl}
+                    download
                     className={cn(
                       'mb-3 flex items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold',
                       'bg-gradient-to-r from-emerald-600 to-green-600 text-white',
@@ -431,7 +407,7 @@ export default function CheckPage() {
                   </a>
                 )}
                 <div className="space-y-1.5">
-                  {lastCheck.contentResources.map((resource, i) => (
+                  {filtered.map((resource, i) => (
                     <div key={i} className="flex items-center gap-2 rounded-lg bg-white/[0.02] px-3 py-2 text-xs">
                       <div className="flex items-center gap-1.5">
                         {resource.tags.map((tag) => (
@@ -445,7 +421,7 @@ export default function CheckPage() {
                           </span>
                         )}
                       </div>
-                      <a href={resource.url} target="_blank" rel="noopener noreferrer" className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
+                      <a href={resource.url} download className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
                         {resource.url}
                       </a>
                       <button onClick={() => copyToClipboard(resource.url)} className="shrink-0 text-gray-500 hover:text-white">
@@ -458,7 +434,8 @@ export default function CheckPage() {
                   ))}
                 </div>
               </GlassCard>
-            )}
+              );
+            })()}
 
             {/* Release notes */}
             {lastCheck.hasUpdate && lastCheck.content?.releaseNotes && (

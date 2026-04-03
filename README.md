@@ -100,7 +100,7 @@ A React web interface for querying Motorola CDS servers directly from the browse
 
 ### Architecture
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────────┐
 │  Cloudflare Worker  (com-motorola-ccc-ota.ealvarado2677.workers.dev)    │
 │                                                                          │
@@ -150,7 +150,7 @@ Source: [`motoota/worker/index.js`](motoota/worker/index.js)
 The Worker only forwards requests to these verified Motorola servers:
 
 | Host | Description |
-|------|-------------|
+| ------ | ------------- |
 | `moto-cds.appspot.com` | Production (Global) |
 | `moto-cds.svcmot.cn` | Production (PRC/LATAM) |
 | `moto-cds-staging.appspot.com` | Staging |
@@ -163,7 +163,8 @@ The Worker only forwards requests to these verified Motorola servers:
 **Endpoint:** `POST https://{host}/cds/upgrade/1/check/ctx/{context}/key/{guid}`
 
 **Request Headers** (matches `com.motorola.ccc.ota` Android app):
-```
+
+```text
 Content-Type: application/json; charset=utf-8
 User-Agent: com.motorola.ccc.ota
 Accept-Encoding: gzip
@@ -171,6 +172,7 @@ Connection: Keep-Alive
 ```
 
 **Request Body** (minimal payload — only 4 fields affect server routing):
+
 ```json
 {
   "id": "x",
@@ -185,6 +187,7 @@ Connection: Keep-Alive
 ```
 
 **Response (update available):**
+
 ```json
 {
   "payload": {
@@ -216,7 +219,7 @@ Connection: Keep-Alive
 
 ## Project Structure
 
-```
+```text
 moto_ota/
 ├── __init__.py          # Package metadata
 ├── __main__.py          # python -m moto_ota entry point
