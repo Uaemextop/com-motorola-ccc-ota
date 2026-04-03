@@ -16,7 +16,7 @@ const ScanPage = lazy(() => import('@/pages/ScanPage'));
 const ServersPage = lazy(() => import('@/pages/ServersPage'));
 const ConfigPage = lazy(() => import('@/pages/ConfigPage'));
 
-const PAGES: Record<string, React.LazyExoticComponent<() => JSX.Element>> = {
+const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
   home: HomePage,
   check: CheckPage,
   chain: ChainPage,

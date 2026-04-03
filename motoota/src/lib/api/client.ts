@@ -52,7 +52,7 @@ export async function checkUpdate(
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const { data, headers } = await postWithProxy(url, payload, timeout);
+      const { data, headers } = await postWithProxy(url, payload as unknown as Record<string, unknown>, timeout);
       return parseCheckResponse(data, headers);
     } catch (err) {
       lastError = err;
