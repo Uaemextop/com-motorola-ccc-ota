@@ -30,3 +30,10 @@ Thumbs.db
 downloads/
 output/
 chain_*.json
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
