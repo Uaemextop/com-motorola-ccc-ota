@@ -92,6 +92,134 @@ Configuration is stored in `~/.config/moto-ota/`:
 
 Edit via `moto-ota config` or through the TUI Configuration menu.
 
+## Web App (MotoOTA)
+
+A React web interface for querying Motorola CDS servers directly from the browser.
+
+**Live:** https://Uaemextop.github.io/com-motorola-ccc-ota/
+
+### Architecture
+
+```
+┌─────────────────────┐    POST /?url=<CDS_URL>    ┌──────────────────────────┐    POST /cds/upgrade/1/check/...    ┌────────────────────┐
+│   MotoOTA Web App   │ ──────────────────────────► │  Cloudflare Worker Proxy │ ──────────────────────────────────►│ moto-cds.appspot.  │
+│  (GitHub Pages)     │ ◄────────────────────────── │  (CORS headers added)    │ ◄─────────────────────────────────│ com (Motorola CDS) │
+└─────────────────────┘    JSON + CORS headers      └──────────────────────────┘    JSON response                   └────────────────────┘
+```
+
+The Motorola CDS API does not return CORS headers, so browser requests fail.
+The Cloudflare Worker acts as a transparent proxy that:
+
+1. Receives the POST request from the browser
+2. Forwards it to the CDS server with the exact headers the Android app uses
+3. Returns the response with `Access-Control-Allow-Origin: *` headers added
+
+### CORS Proxy (Cloudflare Worker)
+
+**Deployed at:** `https://com-motorola-ccc-ota.ealvarado2677.workers.dev`
+
+The proxy source is in [`motoota/worker/cors-proxy.js`](motoota/worker/cors-proxy.js).
+
+#### How it works
+
+```
+Browser POST to:
+  https://com-motorola-ccc-ota.ealvarado2677.workers.dev?url=https://moto-cds.appspot.com/cds/upgrade/1/check/ctx/ota/key/<GUID>
+
+Body (forwarded as-is):
+  {"id":"x","deviceInfo":{"country":"","region":"US"},"extraInfo":{"carrier":"amxmx","vitalUpdate":false,"otaSourceSha1":"<GUID>"},"triggeredBy":"user"}
+
+Worker forwards to CDS with headers:
+  Content-Type: application/json; charset=utf-8
+  User-Agent: com.motorola.ccc.ota
+  Accept-Encoding: gzip
+  Connection: Keep-Alive
+
+Worker returns the CDS JSON response + CORS headers + x-cds-content-exists header
+```
+
+#### Deploy your own proxy
+
+1. Go to [Cloudflare Workers](https://workers.cloudflare.com) and create an account
+2. **Workers & Pages → Create** → Connect to your fork of this repo
+3. Configure the build:
+   - **Build command:** *(leave empty)*
+   - **Deploy command:** `npx wrangler deploy`
+   - **Root directory:** `/`
+   - **Production branch:** `master`
+4. The `wrangler.jsonc` at the repo root points to `motoota/worker/cors-proxy.js`
+5. After deploy, your proxy URL will be `https://<worker-name>.<account>.workers.dev`
+6. In MotoOTA → Configuración → paste the URL in "Proxy CORS personalizado"
+
+#### Allowed CDS hosts
+
+The proxy only forwards requests to these verified Motorola servers:
+
+| Host | Description |
+|------|-------------|
+| `moto-cds.appspot.com` | Production (Global) |
+| `moto-cds.svcmot.cn` | Production (PRC/LATAM) |
+| `moto-cds-staging.appspot.com` | Staging |
+| `moto-cds-qa.appspot.com` | QA |
+| `moto-cds-dev.appspot.com` | Development |
+| `ota-cn-sdc.blurdev.com` | Blurdev (China) |
+
+### CDS API Reference
+
+**Endpoint:** `POST https://{host}/cds/upgrade/1/check/ctx/{context}/key/{guid}`
+
+**Request Headers** (matches `com.motorola.ccc.ota` Android app):
+```
+Content-Type: application/json; charset=utf-8
+User-Agent: com.motorola.ccc.ota
+Accept-Encoding: gzip
+Connection: Keep-Alive
+```
+
+**Request Body** (minimal payload — only 4 fields affect server routing):
+```json
+{
+  "id": "x",
+  "deviceInfo": { "country": "", "region": "US" },
+  "extraInfo": {
+    "carrier": "<CARRIER_CODE>",
+    "vitalUpdate": false,
+    "otaSourceSha1": "<GUID>"
+  },
+  "triggeredBy": "user"
+}
+```
+
+**Response (update available):**
+```json
+{
+  "payload": {
+    "proceed": true,
+    "context": "ota",
+    "contextKey": "<target_guid>",
+    "content": {
+      "displayVersion": "T2SQS33.72-22-8-2",
+      "sourceDisplayVersion": "T2SQS33.72-22-8",
+      "otaTargetSha1": "<target_guid>",
+      "size": 123456789,
+      "updateType": "FULL_UPDATE",
+      "md5_checksum": "abc123...",
+      "releaseNotes": "<h3>Security update</h3>...",
+      "packageID": "..."
+    },
+    "contentResources": [
+      { "url": "https://...", "tags": ["full"], "urlTtlSeconds": 3600 }
+    ],
+    "pollAfterSeconds": 3600,
+    "smartUpdateBitmap": 7
+  }
+}
+```
+
+**Response Header:** `x-cds-content-exists: true|false` — indicates if content exists but requires serial/whitelist.
+
+**Response (no update):** `{ "payload": { "proceed": false, ... } }`
+
 ## Project Structure
 
 ```

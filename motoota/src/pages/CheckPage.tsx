@@ -33,7 +33,8 @@ import { useAppStore } from '@/lib/store';
 import { classifyCarrierStatus } from '@/lib/api/response';
 import { getServerById } from '@/lib/api/servers';
 import { formatBytes, cn } from '@/lib/utils';
-import { DEFAULT_HEADERS, buildCheckURL, buildPayload } from '@/lib/api/endpoints';
+import { DEFAULT_HEADERS, buildCheckURL, buildPayload, WORKER_PROXY } from '@/lib/api/endpoints';
+import { getLastRequestLog } from '@/lib/api/client';
 
 const schema = z.object({
   guid: z
@@ -46,11 +47,13 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 export default function CheckPage() {
-  const { config, lastCheck, updateConfig } = useAppStore();
+  const { config, lastCheck, error, updateConfig } = useAppStore();
   const { check, checking } = useOtaCheck();
   const [showRaw, setShowRaw] = useState(false);
   const [showRequest, setShowRequest] = useState(false);
   const [showReleaseNotes, setShowReleaseNotes] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
+  const [requestLog, setRequestLog] = useState<ReturnType<typeof getLastRequestLog>>(null);
 
   const {
     register,
@@ -73,7 +76,9 @@ export default function CheckPage() {
 
   const onSubmit = async (data: FormData) => {
     updateConfig({ guid: data.guid, carrier: data.carrier, serial: data.serial || '' });
+    setRequestLog(null);
     const result = await check(data.guid, data.carrier);
+    setRequestLog(getLastRequestLog());
     if (result?.hasUpdate) {
       showToast(
         `¡Actualización encontrada! → ${result.content?.targetVersion}`,
@@ -86,6 +91,9 @@ export default function CheckPage() {
       } else {
         showToast('No se encontró actualización para este carrier', 'info');
       }
+    } else {
+      // Error — capture request log for debugging
+      setRequestLog(getLastRequestLog());
     }
   };
 
@@ -228,6 +236,9 @@ export default function CheckPage() {
                 <span className="rounded bg-blue-500/20 px-1.5 py-0.5 font-mono">POST</span>{' '}
                 <span className="break-all font-mono text-gray-300">{previewUrl}</span>
               </p>
+              <p className="mb-3 text-[10px] text-gray-600">
+                Proxy: {config.customProxy || WORKER_PROXY}
+              </p>
               <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Headers</p>
               <pre className="mb-3 font-mono text-gray-400">
                 {Object.entries(DEFAULT_HEADERS)
@@ -244,6 +255,126 @@ export default function CheckPage() {
           )}
         </AnimatePresence>
       </GlassCard>
+
+      {/* Error display */}
+      <AnimatePresence>
+        {error && !checking && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+          >
+            <GlassCard className="border-red-500/20">
+              <div className="flex items-start gap-3">
+                <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
+                <div className="flex-1">
+                  <h4 className="text-sm font-semibold text-red-400">Error en la solicitud</h4>
+                  <p className="mt-1 text-xs text-gray-400">{error}</p>
+                  {requestLog && (
+                    <div className="mt-3 space-y-2 rounded-lg border border-white/5 bg-black/20 p-3 text-xs">
+                      <p className="text-[10px] uppercase tracking-wider text-gray-500">Proxy utilizado</p>
+                      <p className="break-all font-mono text-gray-400">{requestLog.proxyUrl}</p>
+                      {requestLog.responseStatus !== null && (
+                        <>
+                          <p className="text-[10px] uppercase tracking-wider text-gray-500">HTTP Status</p>
+                          <p className="font-mono text-gray-400">{requestLog.responseStatus}</p>
+                        </>
+                      )}
+                      {requestLog.responseBody && (
+                        <>
+                          <p className="text-[10px] uppercase tracking-wider text-gray-500">Respuesta (primeros 500 chars)</p>
+                          <pre className="max-h-32 overflow-auto font-mono text-gray-500">{requestLog.responseBody.slice(0, 500)}</pre>
+                        </>
+                      )}
+                      <p className="text-[10px] text-gray-600">{requestLog.durationMs}ms</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </GlassCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Request/Response debug log */}
+      {requestLog && !error && (
+        <GlassCard className="p-4">
+          <button
+            onClick={() => setShowDebug(!showDebug)}
+            className="flex w-full items-center gap-1.5 text-xs text-gray-500 transition-colors hover:text-gray-300"
+          >
+            <ChevronDown
+              className={cn(
+                'h-3.5 w-3.5 transition-transform',
+                showDebug && 'rotate-180',
+              )}
+            />
+            {showDebug ? 'Ocultar' : 'Mostrar'} solicitud y respuesta HTTP
+          </button>
+          <AnimatePresence>
+            {showDebug && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="mt-3 space-y-4 overflow-hidden text-xs"
+              >
+                {/* Request sent */}
+                <div className="rounded-lg border border-blue-500/10 bg-blue-500/5 p-3">
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-blue-400">
+                    Solicitud enviada
+                  </p>
+                  <p className="mb-1 font-mono text-gray-300">
+                    <span className="rounded bg-blue-500/20 px-1 py-0.5 text-blue-300">POST</span>{' '}
+                    <span className="break-all">{requestLog.proxyUrl}</span>
+                  </p>
+                  <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Target URL</p>
+                  <p className="mb-2 break-all font-mono text-gray-400">{requestLog.targetUrl}</p>
+                  <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Headers</p>
+                  <pre className="mb-2 font-mono text-gray-400">
+                    {Object.entries(requestLog.headers).map(([k, v]) => `${k}: ${v}`).join('\n')}
+                  </pre>
+                  <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Body</p>
+                  <pre className="font-mono text-gray-400">{JSON.stringify(requestLog.body, null, 2)}</pre>
+                </div>
+
+                {/* Response received */}
+                <div className="rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3">
+                  <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+                    Respuesta del servidor
+                  </p>
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className={cn(
+                      'rounded px-1.5 py-0.5 font-mono',
+                      requestLog.responseStatus && requestLog.responseStatus < 300
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : 'bg-red-500/20 text-red-300',
+                    )}>
+                      {requestLog.responseStatus ?? '—'}
+                    </span>
+                    <span className="text-gray-500">{requestLog.durationMs}ms</span>
+                  </div>
+                  {Object.keys(requestLog.responseHeaders).length > 0 && (
+                    <>
+                      <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Response Headers</p>
+                      <pre className="mb-2 max-h-24 overflow-auto font-mono text-gray-400">
+                        {Object.entries(requestLog.responseHeaders).map(([k, v]) => `${k}: ${v}`).join('\n')}
+                      </pre>
+                    </>
+                  )}
+                  <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Response Body</p>
+                  <pre className="max-h-60 overflow-auto font-mono text-gray-400">
+                    {(() => {
+                      try { return JSON.stringify(JSON.parse(requestLog.responseBody), null, 2); }
+                      catch { return requestLog.responseBody.slice(0, 2000); }
+                    })()}
+                  </pre>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </GlassCard>
+      )}
 
       {/* Results */}
       <AnimatePresence>
