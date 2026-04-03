@@ -43,6 +43,7 @@ function buildCheckURL(host, context, guid) {
  */
 function buildPayload(carrier, guid, options = {}) {
   return {
+    // Serial is not used for server routing; moto_ota uses "x" as placeholder
     id: options.serial || 'x',
     deviceInfo: { country: '', region: options.region || 'US' },
     extraInfo: { carrier, vitalUpdate: false, otaSourceSha1: guid },
@@ -61,7 +62,7 @@ function parseResponse(data, headers = {}) {
   const xCdsExists = headers?.['x-cds-content-exists'] === 'true' || null;
   const sizeBytes = content ? Number(content.size) || 0 : 0;
   return {
-    hasUpdate: proceed && content !== null && !!content.displayVersion,
+    hasUpdate: proceed && !!content?.displayVersion,
     proceed,
     xCdsContentExists: xCdsExists,
     content: content && content.displayVersion ? {

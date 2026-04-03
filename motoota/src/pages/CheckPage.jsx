@@ -62,6 +62,19 @@ export default function CheckPage() {
     }
   }
 
+  /** Sanitize release notes HTML by stripping dangerous tags/attributes */
+  function sanitizeHtml(html) {
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    div.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach(el => el.remove());
+    div.querySelectorAll('*').forEach(el => {
+      for (const attr of [...el.attributes]) {
+        if (attr.name.startsWith('on') || attr.name === 'style') el.removeAttribute(attr.name);
+      }
+    });
+    return div.innerHTML;
+  }
+
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
       <motion.h2 initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-2xl font-bold mb-2 flex items-center gap-2">
@@ -230,7 +243,7 @@ export default function CheckPage() {
               {showNotes && (
                 <Card animate={false}>
                   <div className="prose prose-invert prose-sm max-w-none text-slate-300"
-                    dangerouslySetInnerHTML={{ __html: result.content.releaseNotes }} />
+                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(result.content.releaseNotes) }} />
                 </Card>
               )}
             </>
