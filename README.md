@@ -96,64 +96,58 @@ Edit via `moto-ota config` or through the TUI Configuration menu.
 
 A React web interface for querying Motorola CDS servers directly from the browser.
 
-**Live:** https://Uaemextop.github.io/com-motorola-ccc-ota/
+**Live:** `https://com-motorola-ccc-ota.ealvarado2677.workers.dev`
 
 ### Architecture
 
 ```
-┌─────────────────────┐    POST /?url=<CDS_URL>    ┌──────────────────────────┐    POST /cds/upgrade/1/check/...    ┌────────────────────┐
-│   MotoOTA Web App   │ ──────────────────────────► │  Cloudflare Worker Proxy │ ──────────────────────────────────►│ moto-cds.appspot.  │
-│  (GitHub Pages)     │ ◄────────────────────────── │  (CORS headers added)    │ ◄─────────────────────────────────│ com (Motorola CDS) │
-└─────────────────────┘    JSON + CORS headers      └──────────────────────────┘    JSON response                   └────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Cloudflare Worker  (com-motorola-ccc-ota.ealvarado2677.workers.dev)    │
+│                                                                          │
+│  ┌──────────────┐    same-origin POST    ┌─────────────┐                │
+│  │  SPA (Vite)  │ ────────────────────►  │  /api/check  │               │
+│  │  index.html  │ ◄──────────────────── │  handler     │               │
+│  └──────────────┘    JSON response       └──────┬──────┘                │
+│                                                  │                       │
+└──────────────────────────────────────────────────┼───────────────────────┘
+                                                   │ POST /cds/upgrade/1/check/...
+                                                   ▼
+                                          ┌────────────────────┐
+                                          │ moto-cds.appspot.  │
+                                          │ com (Motorola CDS) │
+                                          └────────────────────┘
 ```
 
-The Motorola CDS API does not return CORS headers, so browser requests fail.
-The Cloudflare Worker acts as a transparent proxy that:
+The Motorola CDS API does not return CORS headers, so cross-origin browser requests fail.
+This project solves it by deploying the SPA **and** the API handler on the **same Cloudflare Worker domain** — making every API call a same-origin request. No CORS proxy is needed.
 
-1. Receives the POST request from the browser
-2. Forwards it to the CDS server with the exact headers the Android app uses
-3. Returns the response with `Access-Control-Allow-Origin: *` headers added
+### How it works
 
-### CORS Proxy (Cloudflare Worker)
+1. The Cloudflare Worker serves the Vite-built SPA as static assets
+2. The browser POSTs to `/api/check` (same origin — no CORS)
+3. The Worker forwards the request to the CDS server with Android app headers
+4. The CDS JSON response is returned to the browser
 
-**Deployed at:** `https://com-motorola-ccc-ota.ealvarado2677.workers.dev`
+Source: [`motoota/worker/index.js`](motoota/worker/index.js)
 
-The proxy source is in [`motoota/worker/cors-proxy.js`](motoota/worker/cors-proxy.js).
-
-#### How it works
-
-```
-Browser POST to:
-  https://com-motorola-ccc-ota.ealvarado2677.workers.dev?url=https://moto-cds.appspot.com/cds/upgrade/1/check/ctx/ota/key/<GUID>
-
-Body (forwarded as-is):
-  {"id":"x","deviceInfo":{"country":"","region":"US"},"extraInfo":{"carrier":"amxmx","vitalUpdate":false,"otaSourceSha1":"<GUID>"},"triggeredBy":"user"}
-
-Worker forwards to CDS with headers:
-  Content-Type: application/json; charset=utf-8
-  User-Agent: com.motorola.ccc.ota
-  Accept-Encoding: gzip
-  Connection: Keep-Alive
-
-Worker returns the CDS JSON response + CORS headers + x-cds-content-exists header
-```
-
-#### Deploy your own proxy
+### Deploy your own instance
 
 1. Go to [Cloudflare Workers](https://workers.cloudflare.com) and create an account
 2. **Workers & Pages → Create** → Connect to your fork of this repo
 3. Configure the build:
-   - **Build command:** *(leave empty)*
+   - **Build command:** `cd motoota && npm ci && npm run build`
    - **Deploy command:** `npx wrangler deploy`
    - **Root directory:** `/`
    - **Production branch:** `master`
-4. The `wrangler.jsonc` at the repo root points to `motoota/worker/cors-proxy.js`
-5. After deploy, your proxy URL will be `https://<worker-name>.<account>.workers.dev`
-6. In MotoOTA → Configuración → paste the URL in "Proxy CORS personalizado"
+4. The `wrangler.jsonc` at the repo root configures everything:
+   - `main` → Worker script (`motoota/worker/index.js`)
+   - `assets.directory` → SPA build output (`motoota/dist`)
+   - `assets.not_found_handling` → `single-page-application` (SPA routing)
+5. After deploy, your app will be at `https://<worker-name>.<account>.workers.dev`
 
-#### Allowed CDS hosts
+### Allowed CDS hosts
 
-The proxy only forwards requests to these verified Motorola servers:
+The Worker only forwards requests to these verified Motorola servers:
 
 | Host | Description |
 |------|-------------|

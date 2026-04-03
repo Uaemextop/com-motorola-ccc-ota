@@ -1,10 +1,18 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "com-motorola-ccc-ota",
-  "main": "motoota/worker/cors-proxy.js",
+  "main": "motoota/worker/index.js",
   "compatibility_date": "2026-04-03",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true
+  },
+  "assets": {
+    "directory": "motoota/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "build": {
+    "command": "cd motoota && npm ci && npm run build"
   }
 }

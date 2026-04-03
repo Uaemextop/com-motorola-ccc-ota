@@ -6,7 +6,7 @@ import { resolve } from 'path';
 export default defineConfig({
   plugins: [react(), tailwindcss()],
 
-  base: '/com-motorola-ccc-ota/',
+  base: process.env.VITE_BASE_PATH || '/',
 
   resolve: {
     alias: {
@@ -31,5 +31,11 @@ export default defineConfig({
   server: {
     port: 5173,
     open: false,
+    proxy: {
+      '/api': {
+        target: 'https://com-motorola-ccc-ota.ealvarado2677.workers.dev',
+        changeOrigin: true,
+      },
+    },
   },
 });

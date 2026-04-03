@@ -1,7 +1,7 @@
 /* ── OTA API Client ─────────────────────────────────────────── */
 
 import ky from 'ky';
-import { DEFAULT_HEADERS, buildCheckURL, buildPayload, buildProxyAttempts } from './endpoints';
+import { API_CHECK, buildPayload } from './endpoints';
 import { parseCheckResponse, classifyCarrierStatus } from './response';
 import type { CheckResponse, Carrier, ScanResult } from '@/lib/types';
 
@@ -13,9 +13,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /* ── Request/Response log for debugging ─────────────────────── */
 export interface RequestLog {
   method: string;
-  targetUrl: string;
-  proxyUrl: string;
-  headers: Record<string, string>;
+  url: string;
   body: Record<string, unknown>;
   responseStatus: number | null;
   responseHeaders: Record<string, string>;
@@ -30,122 +28,106 @@ export function getLastRequestLog(): RequestLog | null {
 }
 
 /**
- * POST a JSON payload through a CORS proxy to the CDS server.
+ * POST to the same-origin /api/check endpoint.
  *
- * Tries each proxy in order (custom → Cloudflare Worker → fallbacks).
- * Reads response as text first to detect HTML/empty responses before parsing JSON.
+ * The Cloudflare Worker receives this request and forwards it
+ * to the CDS server with the correct Android app headers.
+ * No CORS proxy needed — it's the same origin.
  */
-async function postWithProxy(
-  url: string,
+async function postApiCheck(
+  host: string,
+  context: string,
+  guid: string,
   payload: Record<string, unknown>,
   timeout = 30000,
-  customProxy?: string,
 ): Promise<{ data: Record<string, unknown>; headers: Record<string, string> }> {
-  const attempts = buildProxyAttempts(url, customProxy);
-  let lastError: unknown;
+  const requestBody = { host, context, guid, payload };
+  const log: RequestLog = {
+    method: 'POST',
+    url: API_CHECK,
+    body: requestBody,
+    responseStatus: null,
+    responseHeaders: {},
+    responseBody: '',
+    error: null,
+    durationMs: 0,
+  };
+  const start = performance.now();
 
-  for (const attemptUrl of attempts) {
-    const log: RequestLog = {
-      method: 'POST',
-      targetUrl: url,
-      proxyUrl: attemptUrl,
-      headers: { ...DEFAULT_HEADERS },
-      body: payload,
-      responseStatus: null,
-      responseHeaders: {},
-      responseBody: '',
-      error: null,
-      durationMs: 0,
-    };
-    const start = performance.now();
+  try {
+    const response = await ky.post(API_CHECK, {
+      json: requestBody,
+      timeout,
+      retry: 0,
+    });
 
-    try {
-      const response = await ky.post(attemptUrl, {
-        json: payload,
-        headers: DEFAULT_HEADERS,
-        timeout,
-        retry: 0,
-      });
+    log.responseStatus = response.status;
+    response.headers.forEach((value, key) => {
+      log.responseHeaders[key] = value;
+    });
 
-      log.responseStatus = response.status;
-      response.headers.forEach((value, key) => {
-        log.responseHeaders[key] = value;
-      });
+    const text = await response.text();
+    log.responseBody = text;
+    log.durationMs = Math.round(performance.now() - start);
+    _lastRequestLog = log;
 
-      const text = await response.text();
-      log.responseBody = text;
-      log.durationMs = Math.round(performance.now() - start);
-      _lastRequestLog = log;
-
-      // Detect empty responses
-      if (!text.trim()) {
-        throw new Error(
-          `Proxy returned empty response (HTTP ${response.status}). ` +
-          `The CORS proxy may be blocking the request.`,
-        );
-      }
-
-      // Detect HTML responses (Cloudflare challenge, error pages, etc.)
-      if (text.trim().startsWith('<')) {
-        throw new Error(
-          `Proxy returned HTML instead of JSON (HTTP ${response.status}). ` +
-          `This usually means the proxy is showing a challenge page.`,
-        );
-      }
-
-      // Parse JSON safely
-      let data: Record<string, unknown>;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(
-          `Invalid JSON from proxy (HTTP ${response.status}). ` +
-          `First 200 chars: ${text.slice(0, 200)}`,
-        );
-      }
-
-      // Check if the proxy returned its own error envelope
-      if (data.error && typeof data.error === 'string') {
-        throw new Error(`Proxy error: ${data.error}`);
-      }
-
-      const headers: Record<string, string> = {};
-      response.headers.forEach((value, key) => {
-        headers[key] = value;
-      });
-      return { data, headers };
-    } catch (err) {
-      log.durationMs = Math.round(performance.now() - start);
-      log.error = err instanceof Error ? err.message : String(err);
-      _lastRequestLog = log;
-      lastError = err;
+    if (!text.trim()) {
+      throw new Error(`Empty response from server (HTTP ${response.status})`);
     }
-  }
 
-  throw lastError instanceof Error
-    ? lastError
-    : new Error('All CORS proxies failed. Configure a custom proxy in Settings.');
+    if (text.trim().startsWith('<')) {
+      throw new Error(
+        `Server returned HTML instead of JSON (HTTP ${response.status}). ` +
+        `This usually means the Worker is not deployed correctly.`,
+      );
+    }
+
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(
+        `Invalid JSON response (HTTP ${response.status}). ` +
+        `First 200 chars: ${text.slice(0, 200)}`,
+      );
+    }
+
+    if (data.error && typeof data.error === 'string') {
+      throw new Error(`Server error: ${data.error}`);
+    }
+
+    const headers: Record<string, string> = {};
+    response.headers.forEach((value, key) => {
+      headers[key] = value;
+    });
+    return { data, headers };
+  } catch (err) {
+    log.durationMs = Math.round(performance.now() - start);
+    log.error = err instanceof Error ? err.message : String(err);
+    _lastRequestLog = log;
+    throw err;
+  }
 }
 
 export async function checkUpdate(
   guid: string,
   carrier: string,
-  options: { host?: string; context?: string; timeout?: number; customProxy?: string } = {},
+  options: { host?: string; context?: string; timeout?: number } = {},
 ): Promise<CheckResponse> {
   const host = options.host || 'moto-cds.appspot.com';
   const context = options.context || 'ota';
-  const url = buildCheckURL(host, context, guid);
   const payload = buildPayload(carrier, guid);
   const timeout = (options.timeout || 30) * 1000;
 
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const { data, headers } = await postWithProxy(
-        url,
+      const { data, headers } = await postApiCheck(
+        host,
+        context,
+        guid,
         payload as unknown as Record<string, unknown>,
         timeout,
-        options.customProxy,
       );
       return parseCheckResponse(data, headers);
     } catch (err) {
@@ -159,7 +141,7 @@ export async function checkUpdate(
 export async function walkChain(
   guid: string,
   carrier: string,
-  options: { host?: string; context?: string; maxSteps?: number; timeout?: number; customProxy?: string } = {},
+  options: { host?: string; context?: string; maxSteps?: number; timeout?: number } = {},
 ): Promise<CheckResponse[]> {
   const maxSteps = options.maxSteps || 50;
   const chain: CheckResponse[] = [];
@@ -183,7 +165,6 @@ export async function scanCarriers(
     host?: string;
     context?: string;
     concurrency?: number;
-    customProxy?: string;
     onProgress?: (completed: number, total: number, result: ScanResult) => void;
   } = {},
 ): Promise<ScanResult[]> {

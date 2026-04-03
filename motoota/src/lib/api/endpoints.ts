@@ -3,26 +3,15 @@
 import type { CheckPayload } from '@/lib/types';
 
 /**
- * Primary CORS proxy — the Cloudflare Worker deployed from this repo.
- * See /motoota/worker/cors-proxy.js for the source.
+ * Same-origin API endpoint handled by the Cloudflare Worker.
+ * No CORS proxy needed — the Worker serves both the SPA and the API.
  */
-export const WORKER_PROXY = 'https://com-motorola-ccc-ota.ealvarado2677.workers.dev';
-
-/**
- * Fallback public CORS proxies — tried after the worker proxy fails.
- */
-export const FALLBACK_CORS_PROXIES: readonly string[] = [
-  'https://corsproxy.io/?',
-];
+export const API_CHECK = '/api/check';
 
 /**
  * HTTP headers that mirror the real com.motorola.ccc.ota Android app.
- *
- * Verified against Python moto_ota (AppConfig.headers):
- *   Content-Type:     application/json; charset=utf-8
- *   User-Agent:       com.motorola.ccc.ota
- *   Accept-Encoding:  gzip
- *   Connection:       Keep-Alive
+ * These are sent by the Worker to the CDS server (not by the browser).
+ * Shown in the UI for reference only.
  */
 export const DEFAULT_HEADERS: Record<string, string> = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -32,7 +21,7 @@ export const DEFAULT_HEADERS: Record<string, string> = {
 };
 
 /**
- * Build the CDS /check endpoint URL.
+ * Build the CDS /check endpoint URL (for display purposes).
  *
  * Python equivalent (servers.py Server.check_url):
  *   https://{host}/cds/upgrade/1/check/ctx/{context}/key/{guid}
@@ -66,33 +55,4 @@ export function buildPayload(
     },
     triggeredBy: options.triggeredBy || 'user',
   };
-}
-
-/**
- * Build ordered list of proxy URLs to try for a target.
- * 1. Custom proxy (user-configured in Settings)
- * 2. Cloudflare Worker proxy (deployed from this repo)
- * 3. Fallback public proxies
- */
-export function buildProxyAttempts(
-  targetUrl: string,
-  customProxy?: string,
-): string[] {
-  const attempts: string[] = [];
-
-  // 1. Custom user-configured proxy
-  if (customProxy) {
-    const trimmed = customProxy.replace(/\/+$/, '');
-    attempts.push(`${trimmed}?url=${encodeURIComponent(targetUrl)}`);
-  }
-
-  // 2. Cloudflare Worker (primary)
-  attempts.push(`${WORKER_PROXY}?url=${encodeURIComponent(targetUrl)}`);
-
-  // 3. Public fallbacks
-  for (const proxy of FALLBACK_CORS_PROXIES) {
-    attempts.push(proxy + encodeURIComponent(targetUrl));
-  }
-
-  return attempts;
 }

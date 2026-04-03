@@ -33,7 +33,7 @@ import { useAppStore } from '@/lib/store';
 import { classifyCarrierStatus } from '@/lib/api/response';
 import { getServerById } from '@/lib/api/servers';
 import { formatBytes, cn } from '@/lib/utils';
-import { DEFAULT_HEADERS, buildCheckURL, buildPayload, WORKER_PROXY } from '@/lib/api/endpoints';
+import { DEFAULT_HEADERS, buildCheckURL, buildPayload } from '@/lib/api/endpoints';
 import { getLastRequestLog } from '@/lib/api/client';
 
 const schema = z.object({
@@ -237,7 +237,7 @@ export default function CheckPage() {
                 <span className="break-all font-mono text-gray-300">{previewUrl}</span>
               </p>
               <p className="mb-3 text-[10px] text-gray-600">
-                Proxy: {config.customProxy || WORKER_PROXY}
+                Vía: /api/check (mismo origen, sin proxy CORS)
               </p>
               <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Headers</p>
               <pre className="mb-3 font-mono text-gray-400">
@@ -272,8 +272,8 @@ export default function CheckPage() {
                   <p className="mt-1 text-xs text-gray-400">{error}</p>
                   {requestLog && (
                     <div className="mt-3 space-y-2 rounded-lg border border-white/5 bg-black/20 p-3 text-xs">
-                      <p className="text-[10px] uppercase tracking-wider text-gray-500">Proxy utilizado</p>
-                      <p className="break-all font-mono text-gray-400">{requestLog.proxyUrl}</p>
+                      <p className="text-[10px] uppercase tracking-wider text-gray-500">Endpoint</p>
+                      <p className="break-all font-mono text-gray-400">{requestLog.url}</p>
                       {requestLog.responseStatus !== null && (
                         <>
                           <p className="text-[10px] uppercase tracking-wider text-gray-500">HTTP Status</p>
@@ -326,13 +326,11 @@ export default function CheckPage() {
                   </p>
                   <p className="mb-1 font-mono text-gray-300">
                     <span className="rounded bg-blue-500/20 px-1 py-0.5 text-blue-300">POST</span>{' '}
-                    <span className="break-all">{requestLog.proxyUrl}</span>
+                    <span className="break-all">{requestLog.url}</span>
                   </p>
-                  <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Target URL</p>
-                  <p className="mb-2 break-all font-mono text-gray-400">{requestLog.targetUrl}</p>
                   <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Headers</p>
                   <pre className="mb-2 font-mono text-gray-400">
-                    {Object.entries(requestLog.headers).map(([k, v]) => `${k}: ${v}`).join('\n')}
+                    {Object.entries(DEFAULT_HEADERS).map(([k, v]) => `${k}: ${v}`).join('\n')}
                   </pre>
                   <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Body</p>
                   <pre className="font-mono text-gray-400">{JSON.stringify(requestLog.body, null, 2)}</pre>

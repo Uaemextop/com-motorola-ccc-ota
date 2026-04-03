@@ -29,7 +29,6 @@ export function useOtaCheck() {
           host: server?.host,
           context: config.context,
           timeout: config.timeout,
-          customProxy: config.customProxy || undefined,
         });
         setLastCheck(result);
         return result;
@@ -70,7 +69,6 @@ export function useChainWalk() {
         const chain = await walkChain(g, c, {
           host: server?.host,
           context: config.context,
-          customProxy: config.customProxy || undefined,
           timeout: config.timeout,
         });
         setChain(chain);
@@ -116,7 +114,6 @@ export function useCarrierScan() {
           host: server?.host,
           context: config.context,
           concurrency: 20,
-          customProxy: config.customProxy || undefined,
           onProgress: (completed: number, total: number, result: ScanResult) => {
             setScanProgress({ completed, total });
             accumulated.push(result);
