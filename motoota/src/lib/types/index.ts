@@ -74,6 +74,7 @@ export interface ScanResult {
   response: CheckResponse | null;
   status: CarrierStatus;
   error: string | null;
+  chain?: CheckResponse[];
 }
 
 export type DownloadNetwork = 'wifi' | 'cell';

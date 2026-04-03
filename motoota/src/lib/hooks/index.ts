@@ -94,7 +94,7 @@ export function useCarrierScan() {
   const [scanning, setScanning] = useState(false);
 
   const scan = useCallback(
-    async (guid?: string, carriers?: Carrier[]) => {
+    async (guid?: string, carriers?: Carrier[], walkChains = true) => {
       const g = guid || config.guid;
       if (!g) {
         setError('Se requiere GUID');
@@ -114,9 +114,14 @@ export function useCarrierScan() {
           host: server?.host,
           context: config.context,
           concurrency: 20,
+          walkOpenChains: walkChains,
           onProgress: (completed: number, total: number, result: ScanResult) => {
             setScanProgress({ completed, total });
             accumulated.push(result);
+            setScanResults([...accumulated]);
+          },
+          onChainProgress: (_carrierCode: string, _chain) => {
+            // Update scan results in-place when a chain completes
             setScanResults([...accumulated]);
           },
         });

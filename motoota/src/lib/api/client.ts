@@ -166,10 +166,12 @@ export async function scanCarriers(
     host?: string;
     context?: string;
     concurrency?: number;
+    walkOpenChains?: boolean;
     onProgress?: (completed: number, total: number, result: ScanResult) => void;
+    onChainProgress?: (carrierCode: string, chain: CheckResponse[]) => void;
   } = {},
 ): Promise<ScanResult[]> {
-  const { concurrency = 20, onProgress } = options;
+  const { concurrency = 20, walkOpenChains = false, onProgress, onChainProgress } = options;
   const results: ScanResult[] = [];
   let completed = 0;
 
@@ -198,6 +200,21 @@ export async function scanCarriers(
       onProgress?.(completed, carriers.length, value);
     }
   }
+
+  // Walk update chains for open carriers (sequentially to avoid rate limiting)
+  if (walkOpenChains) {
+    const openResults = results.filter((r) => r.status === 'open');
+    for (const result of openResults) {
+      try {
+        const chain = await walkChain(guid, result.carrier.code, options);
+        result.chain = chain;
+        onChainProgress?.(result.carrier.code, chain);
+      } catch {
+        // Chain walk failure is non-critical; leave chain undefined
+      }
+    }
+  }
+
   return results;
 }
 

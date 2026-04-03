@@ -31,6 +31,7 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Expose-Headers': 'x-cds-content-exists',
 };
 
 function jsonResponse(body, status = 200, extra = {}) {
