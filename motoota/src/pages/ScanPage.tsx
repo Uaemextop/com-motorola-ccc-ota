@@ -164,9 +164,13 @@ export default function ScanPage() {
     ? scanResults.find((r) => r.carrier.code === selectedCarrier) ?? null
     : null;
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    showToast('Copiado al portapapeles', 'success');
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Copiado al portapapeles', 'success');
+    } catch {
+      showToast('No se pudo copiar al portapapeles', 'error');
+    }
   };
 
   const toggleSort = (field: SortField) => {
@@ -248,7 +252,7 @@ export default function ScanPage() {
             className="space-y-4"
           >
             {/* Status summary */}
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {(Object.entries(statusCounts) as [CarrierStatus, number][]).map(([status, count]) => {
                 const Icon = STATUS_ICONS[status];
                 return (

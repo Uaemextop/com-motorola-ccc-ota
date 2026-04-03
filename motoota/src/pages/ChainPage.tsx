@@ -58,9 +58,13 @@ export default function ChainPage() {
     }
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    showToast('Copiado al portapapeles', 'success');
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Copiado al portapapeles', 'success');
+    } catch {
+      showToast('No se pudo copiar al portapapeles', 'error');
+    }
   };
 
   const selected: CheckResponse | null = selectedStep !== null ? chain[selectedStep] ?? null : null;

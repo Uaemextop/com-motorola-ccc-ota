@@ -79,6 +79,14 @@ async function handleApiCheck(request) {
     }, 403);
   }
 
+  // Validate context and guid to prevent path traversal
+  const SAFE_PATH_SEGMENT = /^[a-zA-Z0-9_.-]+$/;
+  if (!SAFE_PATH_SEGMENT.test(context) || !SAFE_PATH_SEGMENT.test(guid)) {
+    return jsonResponse({
+      error: 'Invalid context or guid — only alphanumeric, dot, dash, and underscore allowed',
+    }, 400);
+  }
+
   const targetUrl = `https://${host}/cds/upgrade/1/check/ctx/${context}/key/${guid}`;
 
   try {

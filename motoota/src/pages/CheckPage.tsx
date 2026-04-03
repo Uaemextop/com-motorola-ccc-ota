@@ -31,7 +31,7 @@ import { useOtaCheck } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
 import { classifyCarrierStatus } from '@/lib/api/response';
 import { getServerById } from '@/lib/api/servers';
-import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename } from '@/lib/utils';
+import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename, downloadFile } from '@/lib/utils';
 import { DEFAULT_HEADERS, buildCheckURL, buildPayload } from '@/lib/api/endpoints';
 import { getLastRequestLog } from '@/lib/api/client';
 
@@ -105,12 +105,17 @@ export default function CheckPage() {
     setShowReleaseNotes(false);
   };
 
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    showToast('Copiado al portapapeles', 'success');
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Copiado al portapapeles', 'success');
+    } catch {
+      showToast('No se pudo copiar al portapapeles', 'error');
+    }
   };
 
   const server = getServerById(config.server);
+  const carrierStatus = lastCheck ? classifyCarrierStatus(lastCheck) : null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -314,7 +319,7 @@ export default function CheckPage() {
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10">
                     <CheckCircle2 className="h-6 w-6 text-emerald-400" />
                   </div>
-                ) : classifyCarrierStatus(lastCheck) === 'whitelisted' ? (
+                ) : carrierStatus === 'whitelisted' ? (
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10">
                     <AlertTriangle className="h-6 w-6 text-amber-400" />
                   </div>
@@ -327,7 +332,7 @@ export default function CheckPage() {
                   <h3 className="text-lg font-semibold text-white">
                     {lastCheck.hasUpdate
                       ? 'Actualización disponible'
-                      : classifyCarrierStatus(lastCheck) === 'whitelisted'
+                      : carrierStatus === 'whitelisted'
                         ? 'Carrier con whitelist'
                         : 'Sin actualización'}
                   </h3>
@@ -335,7 +340,7 @@ export default function CheckPage() {
                     proceed={String(lastCheck.proceed)} · x-cds-content-exists={String(lastCheck.xCdsContentExists)}
                   </p>
                 </div>
-                <StatusBadge status={classifyCarrierStatus(lastCheck)} />
+                <StatusBadge status={carrierStatus!} />
               </div>
 
               {/* Update details inline */}
@@ -392,12 +397,11 @@ export default function CheckPage() {
                   <Download className="h-4 w-4 text-emerald-400" />
                   Descargas ({filtered.length})
                 </h4>
-                {primaryUrl && (
-                  <a
-                    href={primaryUrl}
-                    download={dlName}
+                {primaryUrl && dlName && (
+                  <button
+                    onClick={() => downloadFile(primaryUrl, dlName).catch(() => showToast('Error al descargar', 'error'))}
                     className={cn(
-                      'mb-3 flex items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold',
+                      'mb-3 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold',
                       'bg-gradient-to-r from-emerald-600 to-green-600 text-white',
                       'shadow-lg shadow-emerald-500/20 transition-all',
                       'hover:shadow-emerald-500/30 hover:brightness-110',
@@ -405,7 +409,7 @@ export default function CheckPage() {
                   >
                     <Download className="h-4 w-4" />
                     Descargar OTA ({lastCheck.content?.sizeMB} MB)
-                  </a>
+                  </button>
                 )}
                 <div className="space-y-1.5">
                   {filtered.map((resource, i) => (

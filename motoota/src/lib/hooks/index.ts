@@ -1,6 +1,6 @@
 /* ── Custom Hooks ───────────────────────────────────────────── */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { checkUpdate, walkChain, scanCarriers } from '@/lib/api/client';
 import { getServerById } from '@/lib/api/servers';
 import { useAppStore } from '@/lib/store';
