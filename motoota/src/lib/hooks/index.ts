@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { checkUpdate, walkChain, scanCarriers } from '@/lib/api/client';
 import { getServerById } from '@/lib/api/servers';
 import { useAppStore } from '@/lib/store';
-import type { CheckResponse, Carrier, ScanResult } from '@/lib/types';
+import type { Carrier, ScanResult } from '@/lib/types';
 
 export function useOtaCheck() {
   const { config, setLastCheck, setLoading, setError } = useAppStore();
