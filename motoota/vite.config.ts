@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { resolve } from 'path';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
 
   base: '/com-motorola-ccc-ota/',
 
@@ -22,8 +23,6 @@ export default defineConfig({
         manualChunks: {
           vendor: ['react', 'react-dom'],
           motion: ['framer-motion'],
-          three: ['three', '@react-three/fiber', '@react-three/drei'],
-          ui: ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-tooltip'],
         },
       },
     },

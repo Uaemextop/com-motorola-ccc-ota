@@ -420,12 +420,9 @@ export default function CheckPage() {
                           exit={{ height: 0, opacity: 0 }}
                           className="mt-3 overflow-hidden rounded-lg border border-white/5 bg-black/20 p-4"
                         >
-                          <div
-                            className="text-sm leading-relaxed text-gray-300 [&_h3]:mt-3 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-white [&_p]:mt-1"
-                            dangerouslySetInnerHTML={{
-                              __html: lastCheck.content.releaseNotes,
-                            }}
-                          />
+                          <pre className="whitespace-pre-wrap text-sm leading-relaxed text-gray-300">
+                            {lastCheck.content.releaseNotes}
+                          </pre>
                         </motion.div>
                       )}
                     </AnimatePresence>

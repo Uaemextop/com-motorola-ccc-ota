@@ -106,3 +106,53 @@ select option {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* ── Starfield Background ──────────────────────────────────── */
+
+.stars-sm,
+.stars-md,
+.stars-lg {
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat;
+  animation: drift linear infinite;
+}
+
+.stars-sm {
+  background-image:
+    radial-gradient(1px 1px at 50px 80px, rgba(99, 102, 241, 0.6), transparent),
+    radial-gradient(1px 1px at 180px 30px, rgba(99, 102, 241, 0.5), transparent),
+    radial-gradient(1px 1px at 90px 150px, rgba(99, 102, 241, 0.4), transparent),
+    radial-gradient(1px 1px at 300px 200px, rgba(59, 130, 246, 0.5), transparent),
+    radial-gradient(1px 1px at 400px 100px, rgba(99, 102, 241, 0.3), transparent),
+    radial-gradient(1px 1px at 250px 250px, rgba(59, 130, 246, 0.4), transparent),
+    radial-gradient(1px 1px at 120px 300px, rgba(99, 102, 241, 0.5), transparent),
+    radial-gradient(1px 1px at 350px 50px, rgba(59, 130, 246, 0.3), transparent);
+  background-size: 450px 350px;
+  animation-duration: 120s;
+}
+
+.stars-md {
+  background-image:
+    radial-gradient(1.5px 1.5px at 100px 120px, rgba(59, 130, 246, 0.7), transparent),
+    radial-gradient(1.5px 1.5px at 250px 60px, rgba(99, 102, 241, 0.6), transparent),
+    radial-gradient(1.5px 1.5px at 350px 280px, rgba(59, 130, 246, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 50px 220px, rgba(99, 102, 241, 0.4), transparent),
+    radial-gradient(1.5px 1.5px at 200px 180px, rgba(59, 130, 246, 0.6), transparent);
+  background-size: 400px 300px;
+  animation-duration: 90s;
+}
+
+.stars-lg {
+  background-image:
+    radial-gradient(2px 2px at 150px 150px, rgba(59, 130, 246, 0.8), transparent),
+    radial-gradient(2px 2px at 300px 100px, rgba(99, 102, 241, 0.7), transparent),
+    radial-gradient(2px 2px at 80px 250px, rgba(59, 130, 246, 0.6), transparent);
+  background-size: 500px 400px;
+  animation-duration: 150s;
+}
+
+@keyframes drift {
+  from { transform: translate(0, 0); }
+  to   { transform: translate(-200px, -150px); }
+}

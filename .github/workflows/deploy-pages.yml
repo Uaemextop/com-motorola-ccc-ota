@@ -33,7 +33,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: motoota
-        run: npm ci  --legacy-peer-deps
+        run: npm ci
 
       - name: Build
         working-directory: motoota
