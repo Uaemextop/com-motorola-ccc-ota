@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Link2, ArrowRight, Download, Copy, ChevronDown } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
+import CarrierSelect from '@/components/ui/CarrierSelect';
 import Spinner from '@/components/ui/Spinner';
 import { showToast } from '@/components/ui/Toast';
 import { useChainWalk } from '@/lib/hooks';
@@ -27,6 +28,7 @@ export default function ChainPage() {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -77,13 +79,15 @@ export default function ChainPage() {
             </div>
             <div>
               <label className="mb-1.5 block text-sm font-medium text-gray-400">Carrier</label>
-              <input
-                {...register('carrier')}
-                placeholder="ej: amxmx"
-                className={cn(
-                  'w-full rounded-xl border bg-white/[0.03] px-4 py-3 text-sm text-white',
-                  'placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500/40',
-                  errors.carrier ? 'border-red-500/40' : 'border-white/10',
+              <Controller
+                name="carrier"
+                control={control}
+                render={({ field }) => (
+                  <CarrierSelect
+                    value={field.value}
+                    onChange={field.onChange}
+                    error={errors.carrier?.message}
+                  />
                 )}
               />
             </div>

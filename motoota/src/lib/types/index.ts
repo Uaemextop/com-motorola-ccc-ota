@@ -84,6 +84,7 @@ export interface AppConfig {
   context: string;
   region: string;
   timeout: number;
+  customProxy: string;
 }
 
 export type Page = 'home' | 'check' | 'chain' | 'scan' | 'servers' | 'config';

@@ -2,7 +2,10 @@
 
 import type { CheckPayload } from '@/lib/types';
 
-export const CORS_PROXIES = [
+/**
+ * Public CORS proxies — tried in order after the custom proxy (if set).
+ */
+export const DEFAULT_CORS_PROXIES: readonly string[] = [
   'https://corsproxy.io/?',
   'https://api.allorigins.win/raw?url=',
 ];
@@ -33,4 +36,26 @@ export function buildPayload(
     },
     triggeredBy: options.triggeredBy || 'user',
   };
+}
+
+/**
+ * Build ordered list of proxy URLs to try for a target.
+ * Custom worker proxy (if configured) is tried first.
+ */
+export function buildProxyAttempts(
+  targetUrl: string,
+  customProxy?: string,
+): string[] {
+  const attempts: string[] = [];
+
+  if (customProxy) {
+    const trimmed = customProxy.replace(/\/+$/, '');
+    attempts.push(`${trimmed}?url=${encodeURIComponent(targetUrl)}`);
+  }
+
+  for (const proxy of DEFAULT_CORS_PROXIES) {
+    attempts.push(proxy + encodeURIComponent(targetUrl));
+  }
+
+  return attempts;
 }

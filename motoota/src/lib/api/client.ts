@@ -1,12 +1,12 @@
 /* ── OTA API Client ─────────────────────────────────────────── */
 
 import ky from 'ky';
-import { CORS_PROXIES, DEFAULT_HEADERS, buildCheckURL, buildPayload } from './endpoints';
+import { DEFAULT_HEADERS, buildCheckURL, buildPayload, buildProxyAttempts } from './endpoints';
 import { parseCheckResponse, classifyCarrierStatus } from './response';
 import type { CheckResponse, Carrier, ScanResult } from '@/lib/types';
 
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 1000;
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 800;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -14,8 +14,9 @@ async function postWithProxy(
   url: string,
   payload: Record<string, unknown>,
   timeout = 30000,
+  customProxy?: string,
 ): Promise<{ data: Record<string, unknown>; headers: Record<string, string> }> {
-  const attempts = [url, ...CORS_PROXIES.map((p) => p + encodeURIComponent(url))];
+  const attempts = buildProxyAttempts(url, customProxy);
   let lastError: unknown;
 
   for (const attemptUrl of attempts) {
@@ -25,7 +26,13 @@ async function postWithProxy(
         headers: DEFAULT_HEADERS,
         timeout,
       });
-      const data = (await response.json()) as Record<string, unknown>;
+
+      const text = await response.text();
+      if (!text.trim() || text.trim().startsWith('<')) {
+        throw new Error('Proxy returned HTML instead of JSON');
+      }
+
+      const data = JSON.parse(text) as Record<string, unknown>;
       const headers: Record<string, string> = {};
       response.headers.forEach((value, key) => {
         headers[key] = value;
@@ -41,7 +48,7 @@ async function postWithProxy(
 export async function checkUpdate(
   guid: string,
   carrier: string,
-  options: { host?: string; context?: string; timeout?: number } = {},
+  options: { host?: string; context?: string; timeout?: number; customProxy?: string } = {},
 ): Promise<CheckResponse> {
   const host = options.host || 'moto-cds.appspot.com';
   const context = options.context || 'ota';
@@ -52,7 +59,12 @@ export async function checkUpdate(
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const { data, headers } = await postWithProxy(url, payload as unknown as Record<string, unknown>, timeout);
+      const { data, headers } = await postWithProxy(
+        url,
+        payload as unknown as Record<string, unknown>,
+        timeout,
+        options.customProxy,
+      );
       return parseCheckResponse(data, headers);
     } catch (err) {
       lastError = err;
@@ -65,7 +77,7 @@ export async function checkUpdate(
 export async function walkChain(
   guid: string,
   carrier: string,
-  options: { host?: string; context?: string; maxSteps?: number; timeout?: number } = {},
+  options: { host?: string; context?: string; maxSteps?: number; timeout?: number; customProxy?: string } = {},
 ): Promise<CheckResponse[]> {
   const maxSteps = options.maxSteps || 50;
   const chain: CheckResponse[] = [];
@@ -89,6 +101,7 @@ export async function scanCarriers(
     host?: string;
     context?: string;
     concurrency?: number;
+    customProxy?: string;
     onProgress?: (completed: number, total: number, result: ScanResult) => void;
   } = {},
 ): Promise<ScanResult[]> {

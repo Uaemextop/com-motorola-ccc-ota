@@ -1,7 +1,7 @@
 /* ── Config Page ────────────────────────────────────────────── */
 
 import { motion } from 'framer-motion';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
@@ -15,6 +15,7 @@ import {
   Radio,
 } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
+import CarrierSelect from '@/components/ui/CarrierSelect';
 import { showToast } from '@/components/ui/Toast';
 import { useAppStore } from '@/lib/store';
 import { SERVERS } from '@/lib/api/servers';
@@ -28,6 +29,7 @@ const schema = z.object({
   context: z.string(),
   region: z.string(),
   timeout: z.number().min(5).max(120),
+  customProxy: z.string().url('URL inválida').optional().or(z.literal('')),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -37,6 +39,7 @@ export default function ConfigPage() {
   const {
     register,
     handleSubmit,
+    control,
     reset,
     formState: { isDirty },
   } = useForm<FormData>({
@@ -59,6 +62,7 @@ export default function ConfigPage() {
       context: 'ota',
       region: 'Global',
       timeout: 30,
+      customProxy: '',
     };
     updateConfig(defaults);
     reset(defaults);
@@ -89,10 +93,15 @@ export default function ConfigPage() {
 
           {/* Carrier */}
           <FieldGroup icon={Radio} label="Carrier predeterminado" description="Código del carrier (ej: amxmx, reteu, tmo)">
-            <input
-              {...register('carrier')}
-              placeholder="ej: amxmx"
-              className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+            <Controller
+              name="carrier"
+              control={control}
+              render={({ field }) => (
+                <CarrierSelect
+                  value={field.value ?? ''}
+                  onChange={field.onChange}
+                />
+              )}
             />
           </FieldGroup>
 
@@ -139,6 +148,16 @@ export default function ConfigPage() {
               min={5}
               max={120}
               className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+            />
+          </FieldGroup>
+
+          {/* Custom CORS Proxy */}
+          <FieldGroup icon={Globe2} label="Proxy CORS personalizado" description="URL de tu propio proxy CORS (Cloudflare Worker). Déjalo vacío para usar los proxies públicos predeterminados.">
+            <input
+              {...register('customProxy')}
+              type="url"
+              placeholder="ej: https://my-cors-proxy.workers.dev"
+              className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 font-mono text-sm text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
           </FieldGroup>
 

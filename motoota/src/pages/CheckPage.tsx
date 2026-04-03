@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import {
@@ -26,6 +26,7 @@ import {
 import GlassCard from '@/components/ui/GlassCard';
 import Spinner from '@/components/ui/Spinner';
 import StatusBadge from '@/components/ui/StatusBadge';
+import CarrierSelect from '@/components/ui/CarrierSelect';
 import { showToast } from '@/components/ui/Toast';
 import { useOtaCheck } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
@@ -54,6 +55,7 @@ export default function CheckPage() {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
     watch,
   } = useForm<FormData>({
@@ -149,13 +151,15 @@ export default function CheckPage() {
               Carrier
               <span className="text-red-400">*</span>
             </label>
-            <input
-              {...register('carrier')}
-              placeholder="ej: amxmx, reteu, tmo, retla"
-              className={cn(
-                'w-full rounded-xl border bg-white/[0.03] px-4 py-3 text-sm text-white',
-                'placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40',
-                errors.carrier ? 'border-red-500/40' : 'border-white/10',
+            <Controller
+              name="carrier"
+              control={control}
+              render={({ field }) => (
+                <CarrierSelect
+                  value={field.value}
+                  onChange={field.onChange}
+                  error={errors.carrier?.message}
+                />
               )}
             />
             {errors.carrier && (
@@ -342,6 +346,24 @@ export default function CheckPage() {
                       <Download className="h-4 w-4 text-emerald-400" />
                       URLs de descarga ({lastCheck.contentResources.length})
                     </h4>
+
+                    {/* Primary download button */}
+                    {lastCheck.downloadUrls[0] && (
+                      <a
+                        href={lastCheck.downloadUrls[0]}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(
+                          'mb-4 flex items-center justify-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold',
+                          'bg-gradient-to-r from-emerald-600 to-green-600 text-white',
+                          'shadow-lg shadow-emerald-500/20 transition-all',
+                          'hover:shadow-emerald-500/30 hover:brightness-110',
+                        )}
+                      >
+                        <Download className="h-4 w-4" />
+                        Descargar OTA ({lastCheck.content?.sizeMB} MB)
+                      </a>
+                    )}
                     <div className="space-y-2">
                       {lastCheck.contentResources.map((resource, i) => (
                         <div
@@ -420,9 +442,12 @@ export default function CheckPage() {
                           exit={{ height: 0, opacity: 0 }}
                           className="mt-3 overflow-hidden rounded-lg border border-white/5 bg-black/20 p-4"
                         >
-                          <pre className="whitespace-pre-wrap text-sm leading-relaxed text-gray-300">
-                            {lastCheck.content.releaseNotes}
-                          </pre>
+                          <div
+                            className="prose prose-sm prose-invert max-w-none [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-violet-300 [&_p]:text-gray-300 [&_p]:leading-relaxed"
+                            dangerouslySetInnerHTML={{
+                              __html: sanitizeReleaseNotes(lastCheck.content.releaseNotes),
+                            }}
+                          />
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -475,6 +500,31 @@ export default function CheckPage() {
       </AnimatePresence>
     </div>
   );
+}
+
+/* ── Helper: sanitize release notes HTML ──────────────────── */
+const ALLOWED_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'p', 'br', 'b', 'i', 'strong', 'em', 'ul', 'ol', 'li', 'a']);
+
+function sanitizeReleaseNotes(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  function walk(node: Node): string {
+    if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+    if (node.nodeType !== Node.ELEMENT_NODE) return '';
+    const el = node as Element;
+    const tag = el.tagName.toLowerCase();
+    if (!ALLOWED_TAGS.has(tag)) {
+      let inner = '';
+      el.childNodes.forEach((c) => { inner += walk(c); });
+      return inner;
+    }
+    let inner = '';
+    el.childNodes.forEach((c) => { inner += walk(c); });
+    if (tag === 'br') return '<br/>';
+    return `<${tag}>${inner}</${tag}>`;
+  }
+  let result = '';
+  doc.body.childNodes.forEach((c) => { result += walk(c); });
+  return result;
 }
 
 function InfoRow({
