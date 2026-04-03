@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Download, ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Download, ExternalLink, ChevronDown, ChevronUp, Wifi, Signal, FileText } from 'lucide-react';
 import Card from '@/components/Card';
 import StatusBadge from '@/components/StatusBadge';
 import { checkUpdate, classifyStatus, formatBytes, GUID_REGEX } from '@/lib/api';
@@ -20,6 +20,7 @@ export default function CheckPage() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [showRaw, setShowRaw] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export default function CheckPage() {
       const resp = await checkUpdate(guid.trim(), carrier.trim(), {
         host: srv?.host,
         context,
+        timeout: store.timeout,
       });
       setResult({ ...resp, status: classifyStatus(resp) });
       store.setField('guid', guid.trim());
@@ -76,7 +78,7 @@ export default function CheckPage() {
             <input
               value={guid}
               onChange={e => setGuid(e.target.value)}
-              placeholder="ej: a1b2c3d4e5f6a7b"
+              placeholder="ej: 0d5cc74421f2e8a"
               className="w-full px-4 py-2.5 bg-[#131a2b] border border-[#2a3450] rounded-lg text-sm text-white focus:border-[#00d4ff] focus:ring-1 focus:ring-[#00d4ff]/30 outline-none transition"
             />
           </div>
@@ -171,8 +173,11 @@ export default function CheckPage() {
                   ['Versión Destino', result.content.targetVersion],
                   ['Tamaño', formatBytes(result.content.sizeBytes)],
                   ['Tipo', result.content.updateType],
+                  ['Modelo', result.content.model],
                   ['MD5', result.content.md5],
+                  ['GUID Destino', result.content.targetGuid],
                   ['Package ID', result.content.packageId],
+                  ['Flavour', result.content.flavour],
                 ].map(([label, value]) => (
                   <div key={label} className="bg-[#131a2b] border border-[#2a3450] rounded-lg p-3">
                     <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">{label}</div>
@@ -183,20 +188,52 @@ export default function CheckPage() {
             </Card>
           )}
 
+          {/* Download URLs with tags */}
           {result.downloadUrls?.length > 0 && (
             <Card animate={false}>
               <div className="flex items-center gap-2 text-sm font-semibold text-white mb-3">
                 <Download className="w-4 h-4 text-[#00d4ff]" /> Enlaces de Descarga ({result.downloadUrls.length})
               </div>
               <div className="space-y-2">
-                {result.downloadUrls.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-3 py-2 bg-[#131a2b] border border-[#2a3450] rounded-lg text-sm text-[#00d4ff] hover:bg-[#00d4ff]/5 transition font-mono break-all">
-                    <ExternalLink className="w-4 h-4 shrink-0" /> {url}
-                  </a>
+                {result.downloadUrls.map((dl, i) => (
+                  <div key={i} className="bg-[#131a2b] border border-[#2a3450] rounded-lg p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      {dl.tags.map(tag => (
+                        <span key={tag} className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-full border ${
+                          tag === 'WIFI' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30' :
+                          tag === 'CELL' ? 'bg-orange-500/15 text-orange-400 border-orange-500/30' :
+                          'bg-slate-500/15 text-slate-400 border-slate-500/30'
+                        }`}>
+                          {tag === 'WIFI' ? <Wifi className="w-3 h-3" /> : tag === 'CELL' ? <Signal className="w-3 h-3" /> : null}
+                          {tag}
+                        </span>
+                      ))}
+                      {dl.ttl > 0 && <span className="text-[10px] text-slate-500">TTL: {dl.ttl}s</span>}
+                    </div>
+                    <a href={dl.url} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-2 text-sm text-[#00d4ff] hover:text-[#5eead4] transition font-mono break-all">
+                      <ExternalLink className="w-4 h-4 shrink-0" /> {dl.url}
+                    </a>
+                  </div>
                 ))}
               </div>
             </Card>
+          )}
+
+          {/* Release Notes */}
+          {result.content?.releaseNotes && (
+            <>
+              <button onClick={() => setShowNotes(!showNotes)} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-300 transition">
+                {showNotes ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                <FileText className="w-4 h-4" /> Notas de actualización
+              </button>
+              {showNotes && (
+                <Card animate={false}>
+                  <div className="prose prose-invert prose-sm max-w-none text-slate-300"
+                    dangerouslySetInnerHTML={{ __html: result.content.releaseNotes }} />
+                </Card>
+              )}
+            </>
           )}
 
           {/* Raw JSON toggle */}

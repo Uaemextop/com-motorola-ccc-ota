@@ -5,6 +5,7 @@ import Card from '@/components/Card';
 import StatusBadge from '@/components/StatusBadge';
 import { scanCarriers, GUID_REGEX, formatBytes } from '@/lib/api';
 import { CARRIERS, getAllRegionNames, getCarriersByRegion } from '@/lib/carriers';
+import { SERVERS } from '@/lib/servers';
 import { useAppStore } from '@/lib/store';
 
 export default function ScanPage() {
@@ -33,9 +34,13 @@ export default function ScanPage() {
     setProgress({ done: 0, total: carriers.length });
     const controller = new AbortController();
     abortRef.current = controller;
+    const srv = SERVERS.find(s => s.id === store.server);
     try {
       await scanCarriers(guid.trim(), carriers, {
         signal: controller.signal,
+        host: srv?.host,
+        context: store.context,
+        timeout: store.timeout,
         onProgress: (done, total, result) => {
           setProgress({ done, total });
           setResults(prev => [...prev, result]);
@@ -127,6 +132,7 @@ export default function ScanPage() {
                 <span className="text-[#00d4ff] font-mono font-bold">{r.carrier.code}</span>
                 <span className="text-slate-500 flex-1">{r.carrier.name}</span>
                 <span className="text-slate-600 text-xs">{r.carrier.region}</span>
+                {r.response?.content && <span className="text-slate-300 text-xs font-mono">{r.response.content.targetVersion}</span>}
                 {r.response?.content && <span className="text-slate-400 text-xs">{formatBytes(r.response.content.sizeBytes)}</span>}
               </div>
             ))}
