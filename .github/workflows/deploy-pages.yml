@@ -39,7 +39,7 @@ jobs:
         working-directory: motoota
         run: npm run build
         env:
-          VITE_BASE_PATH: /com-motorola-ccc-ota/
+          VITE_BASE_PATH: /
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
