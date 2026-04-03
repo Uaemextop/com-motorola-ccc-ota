@@ -3,10 +3,23 @@
 import type { CheckPayload } from '@/lib/types';
 
 /**
- * Same-origin API endpoint handled by the Cloudflare Worker.
- * No CORS proxy needed — the Worker serves both the SPA and the API.
+ * Cloudflare Worker domain where the /api/check handler lives.
+ * When the app runs on this same domain (Workers deployment), requests are same-origin.
+ * When running elsewhere (GitHub Pages), requests go cross-origin with CORS.
  */
-export const API_CHECK = '/api/check';
+const WORKER_ORIGIN = 'https://com-motorola-ccc-ota.ealvarado2677.workers.dev';
+
+/**
+ * Resolve the API check endpoint URL.
+ * - Same origin (Cloudflare Workers): uses relative `/api/check`
+ * - Different origin (GitHub Pages / dev): uses absolute Worker URL
+ */
+export function getApiCheckUrl(): string {
+  if (typeof window !== 'undefined' && window.location.origin === WORKER_ORIGIN) {
+    return '/api/check';
+  }
+  return `${WORKER_ORIGIN}/api/check`;
+}
 
 /**
  * HTTP headers that mirror the real com.motorola.ccc.ota Android app.

@@ -26,10 +26,17 @@ const UPSTREAM_HEADERS = {
   'Connection': 'Keep-Alive',
 };
 
+/** CORS headers — allow any origin so the API works from GitHub Pages too */
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
 function jsonResponse(body, status = 200, extra = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...extra },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS_HEADERS, ...extra },
   });
 }
 
@@ -92,7 +99,7 @@ async function handleApiCheck(request) {
       responseHeaders['x-cds-content-exists'] = xcds;
     }
 
-    return new Response(data, { status: upstream.status, headers: responseHeaders });
+    return new Response(data, { status: upstream.status, headers: { ...responseHeaders, ...CORS_HEADERS } });
   } catch (err) {
     return jsonResponse({
       error: 'Failed to reach upstream CDS server',
@@ -105,6 +112,11 @@ async function handleApiCheck(request) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // ── CORS preflight ─────────────────────────────────────
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
+    }
 
     // ── API routes ──────────────────────────────────────────
     if (url.pathname === '/api/check') {

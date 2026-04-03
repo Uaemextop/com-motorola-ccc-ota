@@ -1,7 +1,7 @@
 /* ── OTA API Client ─────────────────────────────────────────── */
 
 import ky from 'ky';
-import { API_CHECK, buildPayload } from './endpoints';
+import { getApiCheckUrl, buildPayload } from './endpoints';
 import { parseCheckResponse, classifyCarrierStatus } from './response';
 import type { CheckResponse, Carrier, ScanResult } from '@/lib/types';
 
@@ -41,10 +41,11 @@ async function postApiCheck(
   payload: Record<string, unknown>,
   timeout = 30000,
 ): Promise<{ data: Record<string, unknown>; headers: Record<string, string> }> {
+  const apiUrl = getApiCheckUrl();
   const requestBody = { host, context, guid, payload };
   const log: RequestLog = {
     method: 'POST',
-    url: API_CHECK,
+    url: apiUrl,
     body: requestBody,
     responseStatus: null,
     responseHeaders: {},
@@ -55,7 +56,7 @@ async function postApiCheck(
   const start = performance.now();
 
   try {
-    const response = await ky.post(API_CHECK, {
+    const response = await ky.post(apiUrl, {
       json: requestBody,
       timeout,
       retry: 0,
