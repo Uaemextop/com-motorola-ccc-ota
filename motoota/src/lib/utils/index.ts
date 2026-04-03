@@ -32,6 +32,17 @@ export function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Build a human-readable download filename for an OTA package */
+export function buildDownloadFilename(
+  targetVersion: string,
+  carrier: string,
+  step?: number,
+): string {
+  const sanitized = targetVersion.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const prefix = step !== undefined ? `step${String(step + 1).padStart(2, '0')}_` : '';
+  return `${prefix}${sanitized}_${carrier}.zip`;
+}
+
 /* ── Sanitize release notes HTML ─────────────────────────────── */
 const ALLOWED_TAGS = new Set([
   'h1', 'h2', 'h3', 'h4', 'p', 'br', 'b', 'i', 'strong', 'em', 'ul', 'ol', 'li', 'a',

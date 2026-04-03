@@ -23,7 +23,7 @@ import Spinner from '@/components/ui/Spinner';
 import { showToast } from '@/components/ui/Toast';
 import { useChainWalk } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
-import { formatBytes, cn, sanitizeReleaseNotes } from '@/lib/utils';
+import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename } from '@/lib/utils';
 import type { CheckResponse } from '@/lib/types';
 
 const schema = z.object({
@@ -260,6 +260,7 @@ export default function ChainPage() {
                         r.tags.some((t) => t.toUpperCase() === networkTag),
                       );
                       const primaryUrl = filtered[0]?.url || selected.downloadUrls[0];
+                      const dlName = selected.content ? buildDownloadFilename(selected.content.targetVersion, config.carrier, selectedStep ?? undefined) : undefined;
                       return (
                       <div className="mb-4">
                         <h5 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-gray-400">
@@ -269,7 +270,7 @@ export default function ChainPage() {
                         {primaryUrl && (
                           <a
                             href={primaryUrl}
-                            download
+                            download={dlName}
                             className={cn(
                               'mb-2 flex items-center justify-center gap-2 rounded-xl px-5 py-2 text-xs font-semibold',
                               'bg-gradient-to-r from-emerald-600 to-green-600 text-white',
@@ -293,7 +294,7 @@ export default function ChainPage() {
                                   </span>
                                 )}
                               </div>
-                              <a href={resource.url} download className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
+                              <a href={resource.url} download={dlName} className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
                                 {resource.url}
                               </a>
                               <button onClick={() => copyToClipboard(resource.url)} className="shrink-0 text-gray-500 hover:text-white">

@@ -31,7 +31,7 @@ import { useOtaCheck } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
 import { classifyCarrierStatus } from '@/lib/api/response';
 import { getServerById } from '@/lib/api/servers';
-import { formatBytes, cn, sanitizeReleaseNotes } from '@/lib/utils';
+import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename } from '@/lib/utils';
 import { DEFAULT_HEADERS, buildCheckURL, buildPayload } from '@/lib/api/endpoints';
 import { getLastRequestLog } from '@/lib/api/client';
 
@@ -385,6 +385,7 @@ export default function CheckPage() {
                 r.tags.some((t) => t.toUpperCase() === networkTag),
               );
               const primaryUrl = filtered[0]?.url || lastCheck.downloadUrls[0];
+              const dlName = lastCheck.content ? buildDownloadFilename(lastCheck.content.targetVersion, config.carrier) : undefined;
               return (
               <GlassCard className="p-5">
                 <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-300">
@@ -394,7 +395,7 @@ export default function CheckPage() {
                 {primaryUrl && (
                   <a
                     href={primaryUrl}
-                    download
+                    download={dlName}
                     className={cn(
                       'mb-3 flex items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold',
                       'bg-gradient-to-r from-emerald-600 to-green-600 text-white',
@@ -421,7 +422,7 @@ export default function CheckPage() {
                           </span>
                         )}
                       </div>
-                      <a href={resource.url} download className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
+                      <a href={resource.url} download={dlName} className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
                         {resource.url}
                       </a>
                       <button onClick={() => copyToClipboard(resource.url)} className="shrink-0 text-gray-500 hover:text-white">

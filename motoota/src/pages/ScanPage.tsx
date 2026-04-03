@@ -22,6 +22,9 @@ import {
   Clock,
   ExternalLink,
   Link2,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
 import Spinner from '@/components/ui/Spinner';
@@ -31,12 +34,22 @@ import { showToast } from '@/components/ui/Toast';
 import { useCarrierScan } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
 import { CARRIERS, getUniqueRegions } from '@/lib/api/carriers';
-import { formatBytes, cn, sanitizeReleaseNotes } from '@/lib/utils';
+import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename } from '@/lib/utils';
 import type { CarrierStatus, ScanResult, CheckResponse } from '@/lib/types';
 
 const schema = z.object({
   guid: z.string().min(7).regex(/^[0-9a-fA-F]+$/),
 });
+
+type SortField = 'carrier' | 'name' | 'region' | 'status' | 'version' | 'chain' | 'size';
+type SortDir = 'asc' | 'desc';
+
+const STATUS_PRIORITY: Record<CarrierStatus, number> = {
+  open: 0,
+  whitelisted: 1,
+  'no-content': 2,
+  error: 3,
+};
 
 const STATUS_ICONS = {
   open: CheckCircle2,
@@ -53,6 +66,8 @@ export default function ScanPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCarrier, setSelectedCarrier] = useState<string | null>(null);
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
+  const [sortField, setSortField] = useState<SortField>('status');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
   const regions = useMemo(() => getUniqueRegions(), []);
 
   const {
@@ -75,7 +90,7 @@ export default function ScanPage() {
   };
 
   const filteredResults = useMemo(() => {
-    return scanResults.filter((r) => {
+    const filtered = scanResults.filter((r) => {
       if (filter !== 'all' && r.status !== filter) return false;
       if (regionFilter !== 'all' && r.carrier.region !== regionFilter) return false;
       if (searchQuery) {
@@ -87,7 +102,40 @@ export default function ScanPage() {
       }
       return true;
     });
-  }, [scanResults, filter, regionFilter, searchQuery]);
+
+    const dir = sortDir === 'asc' ? 1 : -1;
+    filtered.sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'carrier':
+          cmp = a.carrier.code.localeCompare(b.carrier.code);
+          break;
+        case 'name':
+          cmp = a.carrier.name.localeCompare(b.carrier.name);
+          break;
+        case 'region':
+          cmp = a.carrier.region.localeCompare(b.carrier.region);
+          break;
+        case 'status':
+          cmp = STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status];
+          break;
+        case 'version':
+          cmp = (a.response?.content?.targetVersion || '').localeCompare(
+            b.response?.content?.targetVersion || '',
+          );
+          break;
+        case 'chain':
+          cmp = (a.chain?.length || 0) - (b.chain?.length || 0);
+          break;
+        case 'size':
+          cmp = (a.response?.content?.sizeBytes || 0) - (b.response?.content?.sizeBytes || 0);
+          break;
+      }
+      return cmp * dir;
+    });
+
+    return filtered;
+  }, [scanResults, filter, regionFilter, searchQuery, sortField, sortDir]);
 
   const statusCounts = useMemo(() => {
     const counts = { open: 0, whitelisted: 0, 'no-content': 0, error: 0 };
@@ -119,6 +167,22 @@ export default function ScanPage() {
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     showToast('Copiado al portapapeles', 'success');
+  };
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDir('asc');
+    }
+  };
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <ArrowUpDown className="h-3 w-3 text-gray-600" />;
+    return sortDir === 'asc'
+      ? <ArrowUp className="h-3 w-3 text-blue-400" />
+      : <ArrowDown className="h-3 w-3 text-blue-400" />;
   };
 
   return (
@@ -286,13 +350,13 @@ export default function ScanPage() {
                 ))}
               </select>
               <div className="relative flex-1">
-                <SearchIcon className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-500" />
-                <input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Buscar carrier..."
-                  className="w-full rounded-lg border border-white/10 bg-white/[0.03] py-1.5 pl-9 pr-3 text-xs text-white placeholder:text-gray-600 focus:outline-none"
-                />
+                <SearchIcon className="absolute <button onClick={() => toggleSort('carrier')} className="flex items-center gap-1 hover:text-gray-300"><span>Carrier</span><SortIcon field="carrier" /></button></th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('name')} className="flex items-center gap-1 hover:text-gray-300"><span>Nombre</span><SortIcon field="name" /></button></th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('region')} className="flex items-center gap-1 hover:text-gray-300"><span>Región</span><SortIcon field="region" /></button></th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('status')} className="flex items-center gap-1 hover:text-gray-300"><span>Estado</span><SortIcon field="status" /></button></th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('version')} className="flex items-center gap-1 hover:text-gray-300"><span>Versión OTA</span><SortIcon field="version" /></button></th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('chain')} className="flex items-center gap-1 hover:text-gray-300"><span>Cadena</span><SortIcon field="chain" /></button></th>
+                      <th className="px-4 py-3 text-right"><button onClick={() => toggleSort('size')} className="ml-auto flex items-center gap-1 hover:text-gray-300"><span>Tamaño</span><SortIcon field="size" /></button>
               </div>
             </div>
 
@@ -461,6 +525,7 @@ export default function ScanPage() {
                             <StepDetail
                               step={selectedResult.chain[selectedStep]}
                               index={selectedStep}
+                              carrier={selectedResult.carrier.code}
                               networkTag={config.downloadNetwork === 'wifi' ? 'WIFI' : 'CELL'}
                               copyToClipboard={copyToClipboard}
                             />
@@ -474,6 +539,7 @@ export default function ScanPage() {
                       <StepDetail
                         step={selectedResult.response}
                         index={0}
+                        carrier={selectedResult.carrier.code}
                         networkTag={config.downloadNetwork === 'wifi' ? 'WIFI' : 'CELL'}
                         copyToClipboard={copyToClipboard}
                       />
@@ -493,11 +559,13 @@ export default function ScanPage() {
 function StepDetail({
   step,
   index,
+  carrier,
   networkTag,
   copyToClipboard,
 }: {
   step: CheckResponse;
   index: number;
+  carrier: string;
   networkTag: string;
   copyToClipboard: (text: string) => void;
 }) {
@@ -508,6 +576,7 @@ function StepDetail({
     r.tags.some((t) => t.toUpperCase() === networkTag),
   );
   const primaryUrl = filtered[0]?.url || step.downloadUrls[0];
+  const dlName = buildDownloadFilename(step.content.targetVersion, carrier, index);
 
   return (
     <motion.div
@@ -536,7 +605,7 @@ function StepDetail({
           {primaryUrl && (
             <a
               href={primaryUrl}
-              download
+              download={dlName}
               className={cn(
                 'mb-2 flex items-center justify-center gap-2 rounded-xl px-5 py-2 text-xs font-semibold',
                 'bg-gradient-to-r from-emerald-600 to-green-600 text-white',
@@ -560,7 +629,7 @@ function StepDetail({
                     </span>
                   )}
                 </div>
-                <a href={resource.url} download className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
+                <a href={resource.url} download={dlName} className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
                   {resource.url}
                 </a>
                 <button onClick={() => copyToClipboard(resource.url)} className="shrink-0 text-gray-500 hover:text-white">
