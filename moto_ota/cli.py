@@ -727,6 +727,83 @@ def lenovo_firmware(
             console.print(f"[dim]Saved to {output_json}[/]")
 
 
+@lenovo_app.command(name="debug")
+def lenovo_debug(
+    output_json: Optional[Path] = typer.Option(None, "--output", "-o"),
+) -> None:
+    """Probe all LSA endpoints and show infrastructure info (no auth needed)."""
+    from moto_ota.lenovo.client import LenovoLSAClient
+
+    with LenovoLSAClient() as client:
+        results: dict[str, Any] = {}
+
+        # OAuth2 login URL
+        console.print("[bold]Probing unauthenticated endpoints…[/]\n")
+        oauth_url = client.get_oauth2_login_url()
+        console.print(f"[green]OAuth2 URL:[/] {oauth_url[:120]}…")
+        results["oauth2_url"] = oauth_url
+
+        # OAuth2 callback URL
+        cb_url = client.get_oauth2_callback_url()
+        console.print(f"[green]Callback URL:[/] {cb_url}")
+        results["callback_url"] = cb_url
+
+        # Broadcasts
+        broadcasts = client.get_broadcasts()
+        console.print(f"[green]Broadcasts:[/] {len(broadcasts)} items")
+        results["broadcasts"] = broadcasts
+
+        # Feedback issues
+        issues = client.get_feedback_issues()
+        console.print(f"[green]Feedback issues:[/] {len(issues)} root items")
+
+        # Multilingual
+        multi = client.get_multilingual()
+        langs = multi.get("languages", [])
+        console.print(f"[green]Languages:[/] {len(langs)}")
+        for lang in langs:
+            console.print(f"  {lang.get('flag','?')} {lang.get('code')}: {lang.get('nativeName')}")
+        results["languages"] = langs
+
+        # VIP card
+        vip = client.get_vip_card()
+        console.print(f"[green]VIP card:[/] {vip.get('code')} {vip.get('desc')}")
+        results["vip_card"] = vip
+
+        # Client update
+        update = client.check_client_update()
+        console.print(f"[green]Client update:[/] {update.get('code')} {update.get('desc')}")
+
+        # Login test (any WUST)
+        console.print("\n[bold]Testing login with dummy WUST…[/]")
+        try:
+            user = client.login(wust="debug_probe")
+            console.print(
+                f"[green]Login OK:[/] userId={user.get('userId')} "
+                f"name={user.get('fullName', user.get('name', '—'))}"
+            )
+            console.print(f"  Bearer token: {client._bearer[:60]}… ({len(client._bearer)} chars)")
+            console.print(f"  GUID: {client._guid}")
+            results["login"] = {"userId": user.get("userId"), "bearer_length": len(client._bearer)}
+
+            # Test auth on getModelNames
+            console.print("\n[bold]Testing authenticated endpoint…[/]")
+            models = client.get_model_names("Mexico", "Phone")
+            if models:
+                console.print(f"[green]getModelNames:[/] {len(models)} models found!")
+                results["auth_works"] = True
+            else:
+                console.print("[yellow]getModelNames:[/] returned empty (403 Invalid token — datacenter IP)")
+                results["auth_works"] = False
+        except Exception as exc:
+            console.print(f"[red]Login failed:[/] {exc}")
+            results["login_error"] = str(exc)
+
+        if output_json:
+            output_json.write_text(json.dumps(results, indent=2, ensure_ascii=False))
+            console.print(f"\n[dim]Saved to {output_json}[/]")
+
+
 # -- default callback -> launch TUI when no subcommand is given --------
 
 

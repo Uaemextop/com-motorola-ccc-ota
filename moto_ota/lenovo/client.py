@@ -1,18 +1,28 @@
 """LSA API client with cookie-based auth and rotating Bearer tokens.
 
-Authentication flow (cookie bypass)
-------------------------------------
-1. User provides Lenovo Passport cookies exported from a browser
-   session (JSON array of cookie objects).
-2. The ``LPSWUST`` cookie carries the WUST token.  If the user
-   provides cookies from a *different* session (e.g. from
-   ``passport.lenovo.com`` after re-login), the ``lenovoid.wust``
-   query parameter from the callback URL can also be used directly.
+Authentication flow (OAuth2/PKCE — current)
+--------------------------------------------
+1. Call ``get_oauth2_login_url()`` → returns Passport authorize URL.
+2. User authenticates at Passport → redirects to callback with code.
+3. Callback page JS exchanges code → returns ``softwareFix://`` URL with WUST.
+4. ``login(wust)`` posts WUST + GUID to ``lenovoIdLogin.jhtml`` → Bearer token.
+5. Every subsequent request sends ``Authorization: Bearer <token>``
+   and replaces the stored token with the new one from the response.
+
+Authentication flow (cookie bypass — legacy)
+----------------------------------------------
+1. User provides Lenovo Passport cookies (JSON array of cookie objects).
+2. The ``LPSWUST`` cookie carries the WUST token.
 3. ``login()`` posts the WUST + a random GUID to
    ``/Interface/user/lenovoIdLogin.jhtml`` and stores the first
    Bearer token from the response ``Authorization`` header.
-4. Every subsequent request sends ``Authorization: Bearer <token>``
-   and replaces the stored token with the new one from the response.
+
+IP restriction
+--------------
+- Login accepts ANY WUST value and returns a Bearer token + userId.
+- However, tokens are **IP-restricted**: calls from datacenter IPs
+  (AWS, Azure, GCP) get ``403 Invalid token`` on all subsequent endpoints.
+- Only ``vip/card`` (GET) and unauthenticated endpoints work from any IP.
 """
 
 from __future__ import annotations
@@ -27,10 +37,19 @@ import requests
 from moto_ota.lenovo.config import (
     CLIENT_VERSION,
     DEFAULT_LANGUAGE,
+    GET_API_INFO_URL,
+    GET_BROADCAST_URL,
+    GET_FEEDBACK_ISSUE_INFO_URL,
     GET_MODEL_NAMES_URL,
+    GET_NEXT_UPDATE_URL,
+    GET_OAUTH2_URL,
     GET_RESOURCE_URL,
     LOGIN_URL,
+    MODEL_READ_CONFIG_URL,
+    MULTILINGUAL_URL,
+    OAUTH2_CALLBACK_URL,
     USER_AGENT,
+    VIP_CARD_URL,
     WINDOWS_INFO,
 )
 from moto_ota.lenovo.models import (
@@ -358,3 +377,99 @@ class LenovoLSAClient:
 
     def __exit__(self, *exc: Any) -> None:
         self.close()
+
+    # ── unauthenticated endpoints ────────────────────────────────────
+
+    def get_oauth2_login_url(self) -> str:
+        """Get the OAuth2/PKCE authorization URL for Passport login.
+
+        This URL should be opened in a browser.  After authentication,
+        Passport redirects to the callback page which extracts the WUST
+        token and launches the LSA desktop client via ``softwareFix://``.
+
+        Returns
+        -------
+        str
+            Full OAuth2 authorize URL with state, client_id, code_challenge.
+        """
+        result = self._post(GET_API_INFO_URL, {"key": "TIP_URL"})
+        return result.content if result.success else ""
+
+    def get_oauth2_callback_url(self) -> str:
+        """Get the OAuth2 callback endpoint URL.
+
+        Returns
+        -------
+        str
+            URL like ``https://lsa.lenovo.com/Interface/user/oauth2/callback.jhtml``.
+        """
+        r = self._session.get(GET_OAUTH2_URL, timeout=15)
+        data = r.json()
+        return data.get("msg", "") if data.get("code") == "0000" else ""
+
+    def exchange_oauth2_code(
+        self, code: str, scope: str, state: str,
+    ) -> str:
+        """Exchange an OAuth2 authorization code for a WUST token.
+
+        Parameters
+        ----------
+        code : str
+            Authorization code from Passport redirect.
+        scope : str
+            OAuth2 scope (typically ``openid``).
+        state : str
+            State parameter from the original authorize URL.
+
+        Returns
+        -------
+        str
+            WUST token extracted from ``softwareFix://`` URL, or error string.
+        """
+        r = self._session.get(
+            OAUTH2_CALLBACK_URL,
+            params={"code": code, "scope": scope, "state": state},
+            timeout=30,
+        )
+        data = r.json()
+        desc = data.get("desc", "")
+        # On success: desc = "softwareFix://authcallback?wust=<TOKEN>"
+        # On failure: desc = "softwareFix://callback?error=<MSG>"
+        return desc
+
+    def get_broadcasts(self) -> list:
+        """Get broadcast notices (no auth required)."""
+        result = self._post(GET_BROADCAST_URL, None)
+        return result.content if result.success else []
+
+    def get_feedback_issues(self) -> list:
+        """Get feedback issue tree (no auth required)."""
+        result = self._post(GET_FEEDBACK_ISSUE_INFO_URL, None)
+        return result.content if result.success else []
+
+    def get_multilingual(self) -> dict[str, Any]:
+        """Get multilingual translations for the callback page (no auth).
+
+        Returns 18 languages with flag, name, and page translations.
+        """
+        r = self._session.get(MULTILINGUAL_URL, timeout=15)
+        data = r.json()
+        return data.get("msg", {}) if data.get("code") == "0000" else {}
+
+    def check_client_update(self, version_code: int = 0) -> dict[str, Any]:
+        """Check for LSA client updates (no auth required)."""
+        result = self._post(GET_NEXT_UPDATE_URL, {"versionCode": version_code})
+        return result.raw
+
+    def get_vip_card(self) -> dict[str, Any]:
+        """Get VIP card info (GET, works without proper auth).
+
+        Returns geo-gated response like ``code=0003 'No open permission - US'``.
+        """
+        return self._get(VIP_CARD_URL).raw
+
+    def read_model_config(self, model_name: str | None = None) -> dict[str, Any]:
+        """Read rescue-device configuration (no auth required)."""
+        dparams = {"modelName": model_name} if model_name else None
+        result = self._post(MODEL_READ_CONFIG_URL, dparams)
+        return result.raw
