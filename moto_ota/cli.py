@@ -672,6 +672,7 @@ def lenovo_firmware(
         raise typer.Exit(0)
 
     if isinstance(result, LSAFirmware):
+        _URI_TRUNC = 120
         lines = [
             f"[bold green]Brand      :[/] {result.brand}",
             f"[bold green]Model      :[/] {result.model_name}",
@@ -684,23 +685,25 @@ def lenovo_firmware(
         if result.rom_resource:
             rom = result.rom_resource
             lines.append(f"\n[bold cyan]ROM:[/] {rom.name}")
-            lines.append(f"  URI: [dim]{rom.uri[:120]}…[/]")
+            lines.append(f"  URI: [dim]{rom.uri[:_URI_TRUNC]}…[/]")
             if rom.publish_date:
                 lines.append(f"  Published: {rom.publish_date}")
 
         if result.tool_resource:
             tool = result.tool_resource
             lines.append(f"\n[bold cyan]Flash Tool:[/] {tool.name}")
-            lines.append(f"  URI: [dim]{tool.uri[:120]}…[/]")
+            lines.append(f"  URI: [dim]{tool.uri[:_URI_TRUNC]}…[/]")
 
         if result.flash_flow:
-            lines.append(f"\n[bold cyan]Flash Flow:[/] [dim]{result.flash_flow[:120]}…[/]")
+            lines.append(f"\n[bold cyan]Flash Flow:[/] [dim]{result.flash_flow[:_URI_TRUNC]}…[/]")
 
         console.print(
             Panel("\n".join(lines), title="Firmware Available", border_style="green")
         )
 
         if output_json:
+            rom = result.rom_resource
+            tool = result.tool_resource
             data = {
                 "brand": result.brand,
                 "modelName": result.model_name,
@@ -709,15 +712,15 @@ def lenovo_firmware(
                 "fingerprint": result.fingerprint,
                 "comments": result.comments,
                 "rom": {
-                    "name": result.rom_resource.name,
-                    "uri": result.rom_resource.uri,
-                    "md5": result.rom_resource.md5,
-                    "publishDate": result.rom_resource.publish_date,
-                } if result.rom_resource else None,
+                    "name": rom.name,
+                    "uri": rom.uri,
+                    "md5": rom.md5,
+                    "publishDate": rom.publish_date,
+                } if rom else None,
                 "tool": {
-                    "name": result.tool_resource.name,
-                    "uri": result.tool_resource.uri,
-                } if result.tool_resource else None,
+                    "name": tool.name,
+                    "uri": tool.uri,
+                } if tool else None,
                 "flashFlow": result.flash_flow,
             }
             output_json.write_text(json.dumps(data, indent=2, ensure_ascii=False))

@@ -328,7 +328,9 @@ class LenovoLSAClient:
             Firmware data or None if not found.
         """
         current_params = dict(params)
-        for _ in range(10):  # max steps safety
+        # LSA uses at most ~3 parameter steps (simCount, country, etc.)
+        # but we allow up to 10 for safety.
+        for _ in range(10):
             result = self.get_resource(model_name, market_name, **current_params)
             if result is None:
                 return None
