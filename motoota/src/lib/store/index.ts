@@ -54,7 +54,7 @@ export const useAppStore = create<AppState>()(
         context: 'ota',
         region: 'Global',
         timeout: 30,
-        customProxy: '',
+        downloadNetwork: 'wifi',
       },
       updateConfig: (partial) =>
         set((s) => ({ config: { ...s.config, ...partial } })),

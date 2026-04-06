@@ -74,7 +74,10 @@ export interface ScanResult {
   response: CheckResponse | null;
   status: CarrierStatus;
   error: string | null;
+  chain?: CheckResponse[];
 }
+
+export type DownloadNetwork = 'wifi' | 'cell';
 
 export interface AppConfig {
   server: string;
@@ -84,7 +87,7 @@ export interface AppConfig {
   context: string;
   region: string;
   timeout: number;
-  customProxy: string;
+  downloadNetwork: DownloadNetwork;
 }
 
 export type Page = 'home' | 'check' | 'chain' | 'scan' | 'servers' | 'config';

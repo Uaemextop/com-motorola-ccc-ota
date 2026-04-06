@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "homepage": "https://Uaemextop.github.io/com-motorola-ccc-ota/",
+  "homepage": "https://motoota.echosmart.me/",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
-    "@tanstack/react-query": "^5.0.0",
     "clsx": "^2.1.0",
     "framer-motion": "^11.0.0",
     "ky": "^1.2.0",
@@ -27,6 +26,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
+    "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.2.0",

@@ -1,10 +1,10 @@
 /* ── Custom Hooks ───────────────────────────────────────────── */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { checkUpdate, walkChain, scanCarriers } from '@/lib/api/client';
 import { getServerById } from '@/lib/api/servers';
 import { useAppStore } from '@/lib/store';
-import type { CheckResponse, Carrier, ScanResult } from '@/lib/types';
+import type { Carrier, ScanResult } from '@/lib/types';
 
 export function useOtaCheck() {
   const { config, setLastCheck, setLoading, setError } = useAppStore();
@@ -29,7 +29,6 @@ export function useOtaCheck() {
           host: server?.host,
           context: config.context,
           timeout: config.timeout,
-          customProxy: config.customProxy || undefined,
         });
         setLastCheck(result);
         return result;
@@ -70,7 +69,6 @@ export function useChainWalk() {
         const chain = await walkChain(g, c, {
           host: server?.host,
           context: config.context,
-          customProxy: config.customProxy || undefined,
           timeout: config.timeout,
         });
         setChain(chain);
@@ -94,9 +92,10 @@ export function useCarrierScan() {
   const { config, setScanResults, setScanProgress, setLoading, setError } =
     useAppStore();
   const [scanning, setScanning] = useState(false);
+  const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scan = useCallback(
-    async (guid?: string, carriers?: Carrier[]) => {
+    async (guid?: string, carriers?: Carrier[], walkChains = true) => {
       const g = guid || config.guid;
       if (!g) {
         setError('Se requiere GUID');
@@ -112,17 +111,34 @@ export function useCarrierScan() {
       try {
         const server = getServerById(config.server);
         const accumulated: ScanResult[] = [];
+
+        const scheduleFlush = () => {
+          if (!flushTimer.current) {
+            flushTimer.current = setTimeout(() => {
+              flushTimer.current = null;
+              setScanResults([...accumulated]);
+            }, 150);
+          }
+        };
+
         const results = await scanCarriers(g, carriers || [], {
           host: server?.host,
           context: config.context,
           concurrency: 20,
-          customProxy: config.customProxy || undefined,
+          walkOpenChains: walkChains,
           onProgress: (completed: number, total: number, result: ScanResult) => {
             setScanProgress({ completed, total });
             accumulated.push(result);
-            setScanResults([...accumulated]);
+            scheduleFlush();
+          },
+          onChainProgress: () => {
+            scheduleFlush();
           },
         });
+        if (flushTimer.current) {
+          clearTimeout(flushTimer.current);
+          flushTimer.current = null;
+        }
         setScanResults(results);
         return results;
       } catch (err) {

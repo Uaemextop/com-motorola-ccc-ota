@@ -92,9 +92,134 @@ Configuration is stored in `~/.config/moto-ota/`:
 
 Edit via `moto-ota config` or through the TUI Configuration menu.
 
+## Web App (MotoOTA)
+
+A React web interface for querying Motorola CDS servers directly from the browser.
+
+**Live:** `https://com-motorola-ccc-ota.ealvarado2677.workers.dev`
+
+### Architecture
+
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Cloudflare Worker  (com-motorola-ccc-ota.ealvarado2677.workers.dev)    │
+│                                                                          │
+│  ┌──────────────┐    same-origin POST    ┌─────────────┐                │
+│  │  SPA (Vite)  │ ────────────────────►  │  /api/check  │               │
+│  │  index.html  │ ◄──────────────────── │  handler     │               │
+│  └──────────────┘    JSON response       └──────┬──────┘                │
+│                                                  │                       │
+└──────────────────────────────────────────────────┼───────────────────────┘
+                                                   │ POST /cds/upgrade/1/check/...
+                                                   ▼
+                                          ┌────────────────────┐
+                                          │ moto-cds.appspot.  │
+                                          │ com (Motorola CDS) │
+                                          └────────────────────┘
+```
+
+The Motorola CDS API does not return CORS headers, so cross-origin browser requests fail.
+This project solves it by deploying the SPA **and** the API handler on the **same Cloudflare Worker domain** — making every API call a same-origin request. No CORS proxy is needed.
+
+### How it works
+
+1. The Cloudflare Worker serves the Vite-built SPA as static assets
+2. The browser POSTs to `/api/check` (same origin — no CORS)
+3. The Worker forwards the request to the CDS server with Android app headers
+4. The CDS JSON response is returned to the browser
+
+Source: [`motoota/worker/index.js`](motoota/worker/index.js)
+
+### Deploy your own instance
+
+1. Go to [Cloudflare Workers](https://workers.cloudflare.com) and create an account
+2. **Workers & Pages → Create** → Connect to your fork of this repo
+3. Configure the build:
+   - **Build command:** `cd motoota && npm ci && npm run build`
+   - **Deploy command:** `npx wrangler deploy`
+   - **Root directory:** `/`
+   - **Production branch:** `master`
+4. The `wrangler.jsonc` at the repo root configures everything:
+   - `main` → Worker script (`motoota/worker/index.js`)
+   - `assets.directory` → SPA build output (`motoota/dist`)
+   - `assets.not_found_handling` → `single-page-application` (SPA routing)
+5. After deploy, your app will be at `https://<worker-name>.<account>.workers.dev`
+
+### Allowed CDS hosts
+
+The Worker only forwards requests to these verified Motorola servers:
+
+| Host | Description |
+| ------ | ------------- |
+| `moto-cds.appspot.com` | Production (Global) |
+| `moto-cds.svcmot.cn` | Production (PRC/LATAM) |
+| `moto-cds-staging.appspot.com` | Staging |
+| `moto-cds-qa.appspot.com` | QA |
+| `moto-cds-dev.appspot.com` | Development |
+| `ota-cn-sdc.blurdev.com` | Blurdev (China) |
+
+### CDS API Reference
+
+**Endpoint:** `POST https://{host}/cds/upgrade/1/check/ctx/{context}/key/{guid}`
+
+**Request Headers** (matches `com.motorola.ccc.ota` Android app):
+
+```text
+Content-Type: application/json; charset=utf-8
+User-Agent: com.motorola.ccc.ota
+Accept-Encoding: gzip
+Connection: Keep-Alive
+```
+
+**Request Body** (minimal payload — only 4 fields affect server routing):
+
+```json
+{
+  "id": "x",
+  "deviceInfo": { "country": "", "region": "US" },
+  "extraInfo": {
+    "carrier": "<CARRIER_CODE>",
+    "vitalUpdate": false,
+    "otaSourceSha1": "<GUID>"
+  },
+  "triggeredBy": "user"
+}
+```
+
+**Response (update available):**
+
+```json
+{
+  "payload": {
+    "proceed": true,
+    "context": "ota",
+    "contextKey": "<target_guid>",
+    "content": {
+      "displayVersion": "T2SQS33.72-22-8-2",
+      "sourceDisplayVersion": "T2SQS33.72-22-8",
+      "otaTargetSha1": "<target_guid>",
+      "size": 123456789,
+      "updateType": "FULL_UPDATE",
+      "md5_checksum": "abc123...",
+      "releaseNotes": "<h3>Security update</h3>...",
+      "packageID": "..."
+    },
+    "contentResources": [
+      { "url": "https://...", "tags": ["full"], "urlTtlSeconds": 3600 }
+    ],
+    "pollAfterSeconds": 3600,
+    "smartUpdateBitmap": 7
+  }
+}
+```
+
+**Response Header:** `x-cds-content-exists: true|false` — indicates if content exists but requires serial/whitelist.
+
+**Response (no update):** `{ "payload": { "proceed": false, ... } }`
+
 ## Project Structure
 
-```
+```text
 moto_ota/
 ├── __init__.py          # Package metadata
 ├── __main__.py          # python -m moto_ota entry point

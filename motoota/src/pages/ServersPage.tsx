@@ -10,7 +10,7 @@ import {
   Activity,
 } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
-import { SERVERS, REGIONS, getServersByRegion } from '@/lib/api/servers';
+import { REGIONS, getServersByRegion } from '@/lib/api/servers';
 import { useAppStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 

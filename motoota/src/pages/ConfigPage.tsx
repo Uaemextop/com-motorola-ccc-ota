@@ -13,6 +13,7 @@ import {
   Timer,
   Hash,
   Radio,
+  Wifi,
 } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
 import CarrierSelect from '@/components/ui/CarrierSelect';
@@ -29,7 +30,7 @@ const schema = z.object({
   context: z.string(),
   region: z.string(),
   timeout: z.number().min(5).max(120),
-  customProxy: z.string().url('URL inválida').optional().or(z.literal('')),
+  downloadNetwork: z.enum(['wifi', 'cell']),
 });
 type FormData = z.infer<typeof schema>;
 
@@ -62,7 +63,7 @@ export default function ConfigPage() {
       context: 'ota',
       region: 'Global',
       timeout: 30,
-      customProxy: '',
+      downloadNetwork: 'wifi' as const,
     };
     updateConfig(defaults);
     reset(defaults);
@@ -151,14 +152,15 @@ export default function ConfigPage() {
             />
           </FieldGroup>
 
-          {/* Custom CORS Proxy */}
-          <FieldGroup icon={Globe2} label="Proxy CORS personalizado" description="URL de tu propio proxy CORS (Cloudflare Worker). Déjalo vacío para usar los proxies públicos predeterminados.">
-            <input
-              {...register('customProxy')}
-              type="url"
-              placeholder="ej: https://my-cors-proxy.workers.dev"
-              className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 font-mono text-sm text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-            />
+          {/* Download Network */}
+          <FieldGroup icon={Wifi} label="Red de descarga" description="Tipo de red preferida para los enlaces de descarga (filtra los recursos del servidor)">
+            <select
+              {...register('downloadNetwork')}
+              className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+            >
+              <option value="wifi" className="bg-[#1a1a2e]">Wi-Fi</option>
+              <option value="cell" className="bg-[#1a1a2e]">Celular</option>
+            </select>
           </FieldGroup>
 
           {/* Actions */}

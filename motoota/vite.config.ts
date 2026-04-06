@@ -1,16 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { resolve } from 'path';
+import path from 'path';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
 
-  base: '/com-motorola-ccc-ota/',
+  base: process.env.VITE_BASE_PATH || '/',
 
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src'),
+      '@': path.resolve(__dirname, 'src'),
     },
   },
 
@@ -31,5 +31,11 @@ export default defineConfig({
   server: {
     port: 5173,
     open: false,
+    proxy: {
+      '/api': {
+        target: 'https://com-motorola-ccc-ota.ealvarado2677.workers.dev',
+        changeOrigin: true,
+      },
+    },
   },
 });
