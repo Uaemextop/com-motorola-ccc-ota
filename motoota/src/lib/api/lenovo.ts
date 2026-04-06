@@ -37,16 +37,13 @@ interface ModelsContent {
  */
 function buildBody(
   dparams: Record<string, unknown> | null = null,
-  guid?: string,
 ): Record<string, unknown> {
-  const body: Record<string, unknown> = {
+  return {
     client: { version: CLIENT_VERSION },
     dparams,
     language: DEFAULT_LANGUAGE,
     windowsInfo: WINDOWS_INFO,
   };
-
-  return body;
 }
 
 /**
@@ -114,7 +111,7 @@ export async function getModelNames(options?: {
     dparams.country = options.country;
   }
 
-  const body = buildBody(dparams, options?.guid);
+  const body = buildBody(dparams);
   const resp = await lsaPost<ModelsContent>(
     '/Interface/rescueDevice/getModelNames.jhtml',
     body,
@@ -147,7 +144,7 @@ export async function getResource(
     ...params,
   };
 
-  const body = buildBody(dparams, options?.guid);
+  const body = buildBody(dparams);
   const resp = await lsaPost<LenovoFirmwareResource[]>(
     '/Interface/rescueDevice/getResource.jhtml',
     body,

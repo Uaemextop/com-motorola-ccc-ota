@@ -218,7 +218,6 @@ class LenovoClient:
             else:
                 self._bearer_token = f"Bearer {auth}"
             logger.debug("Updated Bearer token: %s...", self._bearer_token[:40])
-        return result
 
     def set_bearer_token(self, token: str) -> None:
         """Manually set a Bearer token (useful for testing)."""
