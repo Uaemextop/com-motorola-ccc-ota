@@ -90,4 +90,64 @@ export interface AppConfig {
   downloadNetwork: DownloadNetwork;
 }
 
-export type Page = 'home' | 'check' | 'chain' | 'scan' | 'servers' | 'config';
+export type Page = 'home' | 'check' | 'chain' | 'scan' | 'servers' | 'config' | 'lenovo';
+
+/* ── Lenovo Software Fix Types ──────────────────────────────── */
+
+export interface LenovoModel {
+  category: string;
+  brand: string;
+  modelName: string;
+  marketName: string;
+  platform: string;
+  readSupport: boolean;
+  readFlow: string;
+}
+
+export interface LenovoFileResource {
+  id: number;
+  fromS3: boolean;
+  name: string;
+  uri: string;
+  type: string;
+  unZip: boolean;
+  md5: string;
+  description: string;
+  publishDate: string;
+}
+
+export interface LenovoParamProperty {
+  label: string;
+  property: string;
+}
+
+export interface LenovoFirmwareResource {
+  brand: string;
+  category: string;
+  modelName: string;
+  realModelName: string;
+  marketName: string;
+  carrier: string;
+  platform: string;
+  fingerPrint: string;
+  comments: string;
+  fastboot: boolean;
+  backUpPopup: boolean;
+  romMatchId: string;
+  paramProperty: LenovoParamProperty | null;
+  paramValues: string[] | null;
+  flashFlow: string | null;
+  romResource: LenovoFileResource | null;
+  toolResource: LenovoFileResource | null;
+  otaResource: LenovoFileResource | null;
+}
+
+export interface LenovoSearchState {
+  models: LenovoModel[];
+  selectedModel: LenovoModel | null;
+  firmwareResources: LenovoFirmwareResource[];
+  selectionSteps: LenovoFirmwareResource[];
+  currentParams: Record<string, string>;
+  loading: boolean;
+  error: string | null;
+}

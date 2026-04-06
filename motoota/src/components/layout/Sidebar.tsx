@@ -10,6 +10,7 @@ import {
   Settings,
   X,
   Zap,
+  Download,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
@@ -26,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'check', label: 'Verificar', icon: Search },
   { id: 'chain', label: 'Cadena', icon: Link2 },
   { id: 'scan', label: 'Escanear', icon: ScanLine },
+  { id: 'lenovo', label: 'Lenovo Fix', icon: Download },
   { id: 'servers', label: 'Servidores', icon: Server },
   { id: 'config', label: 'Configuración', icon: Settings },
 ];

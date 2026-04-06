@@ -15,6 +15,7 @@ const ChainPage = lazy(() => import('@/pages/ChainPage'));
 const ScanPage = lazy(() => import('@/pages/ScanPage'));
 const ServersPage = lazy(() => import('@/pages/ServersPage'));
 const ConfigPage = lazy(() => import('@/pages/ConfigPage'));
+const LenovoPage = lazy(() => import('@/pages/LenovoPage'));
 
 const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
   home: HomePage,
@@ -23,6 +24,7 @@ const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
   scan: ScanPage,
   servers: ServersPage,
   config: ConfigPage,
+  lenovo: LenovoPage,
 };
 
 function PageLoader() {
