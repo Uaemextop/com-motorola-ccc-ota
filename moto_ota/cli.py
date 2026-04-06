@@ -10,6 +10,9 @@ Commands
 * ``moto-ota scan``      -- scan carriers against a GUID to detect status & OTA versions
 * ``moto-ota config``    -- show / edit persistent configuration
 * ``moto-ota``           -- (no subcommand) launch interactive TUI
+* ``moto-ota lenovo login``     -- login to LSA with cookies
+* ``moto-ota lenovo models``    -- list Motorola models available for rescue
+* ``moto-ota lenovo firmware``  -- get firmware download links for a model
 """
 
 from __future__ import annotations
@@ -491,6 +494,234 @@ def interactive() -> None:
     from moto_ota.tui import run_tui
 
     run_tui()
+
+
+# -- Lenovo LSA sub-commands ------------------------------------------
+
+lenovo_app = typer.Typer(
+    name="lenovo",
+    help="Lenovo Software Assist (LSA) — Motorola rescue firmware downloads.",
+    no_args_is_help=True,
+)
+app.add_typer(lenovo_app)
+
+
+def _load_lenovo_cookies(cookies_file: Path) -> list[dict]:
+    """Load cookies from a JSON file."""
+    if not cookies_file.is_file():
+        console.print(f"[red]Cookie file not found:[/] {cookies_file}")
+        raise typer.Exit(1)
+    try:
+        data = json.loads(cookies_file.read_text(encoding="utf-8"))
+        if not isinstance(data, list):
+            raise ValueError("Expected a JSON array of cookie objects")
+        return data
+    except (json.JSONDecodeError, ValueError) as exc:
+        console.print(f"[red]Invalid cookie file:[/] {exc}")
+        raise typer.Exit(1)
+
+
+@lenovo_app.command(name="login")
+def lenovo_login(
+    cookies_file: Path = typer.Option(
+        ..., "--cookies", "-k",
+        help="Path to exported Lenovo Passport cookies (JSON array)",
+    ),
+) -> None:
+    """Login to LSA using exported Lenovo Passport cookies.
+
+    Export cookies from passport.lenovo.com + .lenovo.com in your browser
+    (e.g. via EditThisCookie extension) and save as a JSON file.
+    The LPSWUST cookie carries the WUST token for authentication.
+    """
+    from moto_ota.lenovo.client import LenovoLSAClient
+
+    cookies = _load_lenovo_cookies(cookies_file)
+
+    with LenovoLSAClient(cookies) as client:
+        console.print("[bold]Logging in to LSA…[/]")
+        try:
+            user = client.login()
+        except (ValueError, RuntimeError) as exc:
+            console.print(f"[red]Login failed:[/] {exc}")
+            raise typer.Exit(1)
+
+        panel = Panel(
+            f"[bold green]User ID :[/] {user.get('userId', '—')}\n"
+            f"[bold green]Name    :[/] {user.get('fullName', '—')}\n"
+            f"[bold green]Account :[/] {user.get('name', '—')}",
+            title="✓ LSA Login Successful",
+            border_style="green",
+        )
+        console.print(panel)
+
+
+@lenovo_app.command(name="models")
+def lenovo_models(
+    cookies_file: Path = typer.Option(
+        ..., "--cookies", "-k",
+        help="Path to exported Lenovo Passport cookies (JSON array)",
+    ),
+    country: str = typer.Option("Mexico", "--country", "-c", help="Country name"),
+    category: str = typer.Option("Phone", "--category", help="Device category"),
+    brand: Optional[str] = typer.Option(None, "--brand", "-b", help="Filter by brand"),
+    output_json: Optional[Path] = typer.Option(None, "--output", "-o"),
+) -> None:
+    """List Motorola/Lenovo models available for rescue firmware download."""
+    from moto_ota.lenovo.client import LenovoLSAClient
+
+    cookies = _load_lenovo_cookies(cookies_file)
+
+    with LenovoLSAClient(cookies) as client:
+        console.print("[bold]Logging in to LSA…[/]")
+        try:
+            client.login()
+        except (ValueError, RuntimeError) as exc:
+            console.print(f"[red]Login failed:[/] {exc}")
+            raise typer.Exit(1)
+
+        console.print(f"[bold]Fetching models[/] (country={country}, category={category})…")
+        models = client.get_model_names(country, category)
+
+    if brand:
+        models = [m for m in models if m.brand.lower() == brand.lower()]
+
+    if not models:
+        console.print("[yellow]No models found.[/]")
+        raise typer.Exit(1)
+
+    table = Table(title=f"LSA Models — {country} / {category} ({len(models)})")
+    table.add_column("Model", style="bold cyan")
+    table.add_column("Market Name", style="green")
+    table.add_column("Brand")
+    table.add_column("Platform", style="dim")
+
+    for m in models:
+        table.add_row(m.model_name, m.market_name, m.brand, m.platform)
+
+    console.print(table)
+
+    if output_json:
+        data = [
+            {
+                "modelName": m.model_name,
+                "marketName": m.market_name,
+                "brand": m.brand,
+                "platform": m.platform,
+            }
+            for m in models
+        ]
+        output_json.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        console.print(f"[dim]Saved to {output_json}[/]")
+
+
+@lenovo_app.command(name="firmware")
+def lenovo_firmware(
+    cookies_file: Path = typer.Option(
+        ..., "--cookies", "-k",
+        help="Path to exported Lenovo Passport cookies (JSON array)",
+    ),
+    model: str = typer.Option(..., "--model", "-m", help="Model name (e.g. XT2523-2)"),
+    market_name: str = typer.Option(..., "--name", "-n", help="Market name (e.g. 'Moto g05')"),
+    sim_count: Optional[str] = typer.Option(None, "--sim", help="SIM count (Single/Dual)"),
+    country: Optional[str] = typer.Option(None, "--country", "-c", help="Country variant"),
+    output_json: Optional[Path] = typer.Option(None, "--output", "-o"),
+) -> None:
+    """Get firmware download links for a specific Motorola model.
+
+    The LSA API uses a step-by-step parameter selection.  If --sim and
+    --country are not provided, the command shows available choices.
+    """
+    from moto_ota.lenovo.client import LenovoLSAClient
+    from moto_ota.lenovo.models import LSAFirmware, ParamChoice
+
+    cookies = _load_lenovo_cookies(cookies_file)
+
+    with LenovoLSAClient(cookies) as client:
+        console.print("[bold]Logging in to LSA…[/]")
+        try:
+            client.login()
+        except (ValueError, RuntimeError) as exc:
+            console.print(f"[red]Login failed:[/] {exc}")
+            raise typer.Exit(1)
+
+        # Build params
+        params: dict[str, str] = {}
+        if sim_count:
+            params["simCount"] = sim_count
+        if country:
+            params["country"] = country
+
+        console.print(f"[bold]Querying firmware[/] for {model} ({market_name})…")
+        result = client.get_resource(model, market_name, **params)
+
+    if result is None:
+        console.print("[yellow]No firmware found.[/]")
+        raise typer.Exit(1)
+
+    if isinstance(result, ParamChoice):
+        console.print(
+            Panel(
+                f"[bold yellow]Select {result.label}[/] "
+                f"(--{result.property_name.lower()}):\n\n"
+                + "\n".join(f"  • {v}" for v in result.values),
+                title="Parameter Required",
+                border_style="yellow",
+            )
+        )
+        raise typer.Exit(0)
+
+    if isinstance(result, LSAFirmware):
+        lines = [
+            f"[bold green]Brand      :[/] {result.brand}",
+            f"[bold green]Model      :[/] {result.model_name}",
+            f"[bold green]Market     :[/] {result.market_name}",
+            f"[bold green]Platform   :[/] {result.platform}",
+            f"[bold green]Fingerprint:[/] {result.fingerprint}",
+            f"[bold green]Comments   :[/] {result.comments}",
+        ]
+
+        if result.rom_resource:
+            rom = result.rom_resource
+            lines.append(f"\n[bold cyan]ROM:[/] {rom.name}")
+            lines.append(f"  URI: [dim]{rom.uri[:120]}…[/]")
+            if rom.publish_date:
+                lines.append(f"  Published: {rom.publish_date}")
+
+        if result.tool_resource:
+            tool = result.tool_resource
+            lines.append(f"\n[bold cyan]Flash Tool:[/] {tool.name}")
+            lines.append(f"  URI: [dim]{tool.uri[:120]}…[/]")
+
+        if result.flash_flow:
+            lines.append(f"\n[bold cyan]Flash Flow:[/] [dim]{result.flash_flow[:120]}…[/]")
+
+        console.print(
+            Panel("\n".join(lines), title="Firmware Available", border_style="green")
+        )
+
+        if output_json:
+            data = {
+                "brand": result.brand,
+                "modelName": result.model_name,
+                "marketName": result.market_name,
+                "platform": result.platform,
+                "fingerprint": result.fingerprint,
+                "comments": result.comments,
+                "rom": {
+                    "name": result.rom_resource.name,
+                    "uri": result.rom_resource.uri,
+                    "md5": result.rom_resource.md5,
+                    "publishDate": result.rom_resource.publish_date,
+                } if result.rom_resource else None,
+                "tool": {
+                    "name": result.tool_resource.name,
+                    "uri": result.tool_resource.uri,
+                } if result.tool_resource else None,
+                "flashFlow": result.flash_flow,
+            }
+            output_json.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+            console.print(f"[dim]Saved to {output_json}[/]")
 
 
 # -- default callback -> launch TUI when no subcommand is given --------
