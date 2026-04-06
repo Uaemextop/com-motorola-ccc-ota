@@ -493,6 +493,232 @@ def interactive() -> None:
     run_tui()
 
 
+# -- Lenovo Software Fix commands --------------------------------------
+
+lenovo_app = typer.Typer(
+    name="lenovo",
+    help="Lenovo Software Fix — firmware from lsa.lenovo.com (requires Camoufox).",
+    no_args_is_help=True,
+)
+app.add_typer(lenovo_app, name="lenovo")
+
+
+@lenovo_app.command(name="login")
+def lenovo_login(
+    username: str = typer.Option(..., "--user", "-u", help="Lenovo ID email"),
+    password: str = typer.Option(..., "--pass", "-p", help="Lenovo ID password", hide_input=True),
+    headless: bool = typer.Option(True, "--headless/--no-headless", help="Run browser headless"),
+) -> None:
+    """Login to Lenovo ID via Passport (Camoufox browser)."""
+    from moto_ota.lenovo.client import LenovoClient
+
+    with LenovoClient() as client:
+        console.print("[bold]Logging in to Lenovo ID...[/]")
+        result = client.login(username, password, headless=headless)
+        console.print(
+            Panel(
+                f"[bold green]User:[/] {result.full_name}\n"
+                f"[bold green]ID  :[/] {result.user_id}\n"
+                f"[bold green]WUST:[/] {result.wust[:40]}...",
+                title="Lenovo Login Successful",
+                border_style="green",
+            )
+        )
+
+
+@lenovo_app.command(name="models")
+def lenovo_models(
+    country: str = typer.Option("", "--country", "-c", help="Filter by country"),
+    category: str = typer.Option("Phone", "--category", help="Device category"),
+    username: str = typer.Option("", "--user", "-u", help="Lenovo ID email (for auth)"),
+    password: str = typer.Option("", "--pass", "-p", help="Lenovo ID password", hide_input=True),
+    output_json: Optional[Path] = typer.Option(None, "--output", "-o"),
+) -> None:
+    """List available device models from Lenovo Software Fix."""
+    from moto_ota.lenovo.client import LenovoClient
+
+    with LenovoClient() as client:
+        if username and password:
+            console.print("[dim]Logging in...[/]")
+            client.login(username, password)
+
+        console.print(f"[bold]Fetching models[/] (category={category}, country={country or 'all'})...")
+        models = client.get_model_names(country=country, category=category)
+
+    table = Table(title=f"Lenovo Models — {len(models)} found")
+    table.add_column("Model", style="bold cyan")
+    table.add_column("Market Name", style="green")
+    table.add_column("Brand")
+    table.add_column("Platform")
+
+    for m in models:
+        table.add_row(m.model_name, m.market_name, m.brand, m.platform)
+
+    console.print(table)
+
+    if output_json:
+        data = [
+            {"modelName": m.model_name, "marketName": m.market_name,
+             "brand": m.brand, "platform": m.platform}
+            for m in models
+        ]
+        output_json.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        console.print(f"[dim]Saved to {output_json}[/]")
+
+
+@lenovo_app.command(name="firmware")
+def lenovo_firmware(
+    model: str = typer.Option(..., "--model", "-m", help="Model name (e.g. XT2523-2)"),
+    market: str = typer.Option(..., "--market", help="Market name (e.g. 'Moto g05')"),
+    sim_count: str = typer.Option("", "--sim", help="SIM count (Single/Dual)"),
+    country: str = typer.Option("", "--country", "-c", help="Country variant"),
+    username: str = typer.Option("", "--user", "-u", help="Lenovo ID email (for auth)"),
+    password: str = typer.Option("", "--pass", "-p", help="Lenovo ID password", hide_input=True),
+    output_json: Optional[Path] = typer.Option(None, "--output", "-o"),
+) -> None:
+    """Get firmware resources for a specific model."""
+    from moto_ota.lenovo.client import LenovoClient
+
+    with LenovoClient() as client:
+        if username and password:
+            console.print("[dim]Logging in...[/]")
+            client.login(username, password)
+
+        console.print(
+            f"[bold]Fetching firmware[/] for {model} ({market})..."
+        )
+        resources = client.get_resource(
+            model, market, sim_count=sim_count, country=country
+        )
+
+    if not resources:
+        console.print("[yellow]No firmware resources found.[/]")
+        raise typer.Exit(1)
+
+    for r in resources:
+        # Show parameter selection options if present
+        if r.param_property:
+            prop = r.param_property
+            console.print(
+                Panel(
+                    f"[bold]Select {prop.label}:[/]\n"
+                    + "\n".join(f"  • {v}" for v in prop.values),
+                    title=f"Selection Required: {prop.label}",
+                    border_style="yellow",
+                )
+            )
+            continue
+
+        # Show firmware details
+        parts: list[str] = []
+        parts.append(f"[bold green]Model     :[/] {r.model_name} ({r.market_name})")
+        parts.append(f"[bold green]Brand     :[/] {r.brand}")
+        parts.append(f"[bold green]Platform  :[/] {r.platform}")
+        if r.fingerprint:
+            parts.append(f"[bold green]Fingerprint:[/] {r.fingerprint}")
+        if r.comments:
+            parts.append(f"[bold green]Variants  :[/] {r.comments}")
+        if r.rom_resource:
+            parts.append(f"\n[bold cyan]ROM:[/] {r.rom_resource.name}")
+            parts.append(f"  URL: [dim]{r.rom_resource.uri[:100]}...[/]")
+            if r.rom_resource.publish_date:
+                parts.append(f"  Published: {r.rom_resource.publish_date}")
+        if r.tool_resource:
+            parts.append(f"\n[bold cyan]Tool:[/] {r.tool_resource.name}")
+            parts.append(f"  URL: [dim]{r.tool_resource.uri[:100]}...[/]")
+
+        console.print(
+            Panel(
+                "\n".join(parts),
+                title="Firmware Resource",
+                border_style="green",
+            )
+        )
+
+    if output_json:
+        data = [
+            {
+                "modelName": r.model_name,
+                "marketName": r.market_name,
+                "brand": r.brand,
+                "platform": r.platform,
+                "fingerprint": r.fingerprint,
+                "comments": r.comments,
+                "romResource": {
+                    "name": r.rom_resource.name,
+                    "uri": r.rom_resource.uri,
+                    "md5": r.rom_resource.md5,
+                    "publishDate": r.rom_resource.publish_date,
+                } if r.rom_resource else None,
+                "toolResource": {
+                    "name": r.tool_resource.name,
+                    "uri": r.tool_resource.uri,
+                } if r.tool_resource else None,
+            }
+            for r in resources
+            if r.rom_resource or r.tool_resource
+        ]
+        output_json.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        console.print(f"[dim]Saved to {output_json}[/]")
+
+
+@lenovo_app.command(name="download")
+def lenovo_download(
+    model: str = typer.Option(..., "--model", "-m", help="Model name"),
+    market: str = typer.Option(..., "--market", help="Market name"),
+    sim_count: str = typer.Option("", "--sim", help="SIM count"),
+    country: str = typer.Option("", "--country", "-c", help="Country variant"),
+    output_dir: Path = typer.Option(
+        Path("lenovo-downloads"), "--output-dir", "-d", help="Save directory"
+    ),
+    username: str = typer.Option("", "--user", "-u", help="Lenovo ID email"),
+    password: str = typer.Option("", "--pass", "-p", help="Lenovo ID password", hide_input=True),
+    rom_only: bool = typer.Option(False, "--rom-only", help="Download ROM only (skip tools)"),
+) -> None:
+    """Download firmware files from rsddownload-secure.lenovo.com."""
+    from moto_ota.lenovo.client import LenovoClient
+    from moto_ota.lenovo.downloader import download_all_resources
+    from moto_ota.lenovo.models import FileResource
+
+    with LenovoClient() as client:
+        if username and password:
+            console.print("[dim]Logging in...[/]")
+            client.login(username, password)
+
+        console.print(
+            f"[bold]Fetching firmware[/] for {model} ({market})..."
+        )
+        resources = client.get_resource(
+            model, market, sim_count=sim_count, country=country
+        )
+
+    # Collect downloadable resources
+    to_download: list[FileResource] = []
+    for r in resources:
+        if r.rom_resource and r.rom_resource.uri:
+            to_download.append(r.rom_resource)
+        if not rom_only and r.tool_resource and r.tool_resource.uri:
+            to_download.append(r.tool_resource)
+
+    if not to_download:
+        console.print("[yellow]No downloadable resources found.[/]")
+        raise typer.Exit(1)
+
+    console.print(
+        f"\n[bold]{len(to_download)}[/] file(s) to download:\n"
+        + "\n".join(f"  • {r.name}" for r in to_download)
+        + "\n"
+    )
+
+    saved = download_all_resources(to_download, output_dir)
+
+    console.print(
+        f"\n[bold green]Downloaded {len(saved)} file(s)[/] → {output_dir}"
+    )
+    for p in saved:
+        console.print(f"  ✓ {p.name}")
+
+
 # -- default callback -> launch TUI when no subcommand is given --------
 
 
