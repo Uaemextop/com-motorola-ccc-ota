@@ -508,13 +508,31 @@ def lenovo_login(
     username: str = typer.Option(..., "--user", "-u", help="Lenovo ID email"),
     password: str = typer.Option(..., "--pass", "-p", help="Lenovo ID password", hide_input=True),
     headless: bool = typer.Option(True, "--headless/--no-headless", help="Run browser headless"),
+    proxy: str = typer.Option("", "--proxy", help="Residential proxy (socks5://host:port)"),
 ) -> None:
-    """Login to Lenovo ID via Passport (Camoufox browser)."""
+    """Login to Lenovo ID via Passport (Camoufox browser).
+
+    Uses Camoufox with TLS fingerprint spoofing, real Windows 11
+    hardware simulation, persistent cookies, and human-like interaction.
+
+    A residential proxy is recommended to bypass Akamai bot protection::
+
+        moto-ota lenovo login -u user@email.com -p --proxy socks5://host:port
+    """
     from moto_ota.lenovo.client import LenovoClient
 
+    proxy_dict = {"server": proxy} if proxy else None
+
     with LenovoClient() as client:
-        console.print("[bold]Logging in to Lenovo ID...[/]")
-        result = client.login(username, password, headless=headless)
+        console.print("[bold]Logging in to Lenovo ID via Camoufox...[/]")
+        console.print("[dim]  TLS fingerprint: Windows 11 Firefox[/]")
+        console.print("[dim]  Humanize: cursor + typing + scroll[/]")
+        console.print("[dim]  GeoIP: auto-detect from IP[/]")
+        if proxy:
+            console.print(f"[dim]  Proxy: {proxy}[/]")
+        result = client.login(
+            username, password, headless=headless, proxy=proxy_dict
+        )
         console.print(
             Panel(
                 f"[bold green]User:[/] {result.full_name}\n"

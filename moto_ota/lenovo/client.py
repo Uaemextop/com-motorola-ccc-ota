@@ -99,13 +99,18 @@ class LenovoClient:
         password: str,
         *,
         headless: bool = True,
-        browser_timeout_ms: int = 60_000,
+        browser_timeout_ms: int = 90_000,
+        proxy: dict | None = None,
     ) -> LenovoLoginResult:
         """Login to Lenovo ID and obtain a Bearer token.
 
         This performs a two-step login:
           1. Browser-based Passport login (Camoufox) → WUST token
           2. Exchange WUST for Bearer token via LSA API
+
+        The LSA server uses **rotating tokens**: each response includes
+        a new ``Authorization`` header that must be used for the next
+        request.  The client tracks this automatically.
 
         Parameters
         ----------
@@ -117,6 +122,8 @@ class LenovoClient:
             Run Camoufox in headless mode.
         browser_timeout_ms:
             Max time for the browser login flow.
+        proxy:
+            Optional Playwright proxy dict for residential proxy.
 
         Returns
         -------
@@ -130,6 +137,7 @@ class LenovoClient:
             password,
             headless=headless,
             timeout_ms=browser_timeout_ms,
+            proxy=proxy,
         )
 
         # Step 2: Exchange WUST for Bearer token
@@ -154,32 +162,62 @@ class LenovoClient:
                 f"Lenovo ID login failed: {data.get('desc', 'unknown error')}"
             )
 
-        # Extract Bearer token from response headers
-        # The token comes in the Set-Cookie or Authorization response
-        auth_header = resp.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            self._bearer_token = auth_header
-        else:
-            # Build token from cookies/response (LSA uses cookie-based auth)
-            # After lenovoIdLogin, subsequent requests use Bearer tokens
-            # that are derived from the session
-            for cookie in resp.cookies:
-                if cookie.name.upper() in ("AUTHORIZATION", "TOKEN", "BEARER"):
-                    self._bearer_token = f"Bearer {cookie.value}"
-                    break
-
-        # If no explicit Bearer token, the session cookies handle auth
-        # The Bearer token appears in subsequent API call headers
-        # We need to extract it from the session or set it from WUST
-        if not self._bearer_token:
-            # The LSA client generates a Bearer token internally
-            # Based on HAR analysis, it appears as a session-derived value
-            logger.debug(
-                "No explicit Bearer token; session cookies will be used"
-            )
+        # Extract rotating Bearer token from response header.
+        # The LSA server returns a new Authorization token with every
+        # response.  The client must use the latest token for the next
+        # request (rotating token pattern).
+        self._update_bearer_from_response(resp)
 
         self._user_info = result
         logger.info("Logged in as %s (userId=%s)", result.full_name, result.user_id)
+        return result
+
+    def login_with_wust(self, wust: str) -> LenovoLoginResult:
+        """Login using a pre-obtained WUST token (skips Camoufox).
+
+        Useful when the WUST was obtained externally (e.g. via a
+        browser session or from a HAR capture).
+        """
+        self._wust = wust
+
+        body = _build_body(
+            dparams={"wust": wust, "guid": self._guid},
+            language=self._language,
+        )
+
+        resp = self._session.post(
+            LENOVO_ID_LOGIN_URL,
+            json=body,
+            timeout=self._timeout,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        result = LenovoLoginResult.from_dict(data, wust=wust)
+        if not result.success:
+            raise RuntimeError(
+                f"Lenovo ID login failed: {data.get('desc', 'unknown error')}"
+            )
+
+        self._update_bearer_from_response(resp)
+        self._user_info = result
+        logger.info("Logged in as %s (userId=%s)", result.full_name, result.user_id)
+        return result
+
+    def _update_bearer_from_response(self, resp: requests.Response) -> None:
+        """Extract rotating Authorization token from response headers.
+
+        The LSA server returns a new ``Authorization`` value with every
+        response.  The client must send it as ``Bearer <token>`` in the
+        next request.
+        """
+        auth = resp.headers.get("Authorization", "")
+        if auth:
+            if auth.startswith("Bearer "):
+                self._bearer_token = auth
+            else:
+                self._bearer_token = f"Bearer {auth}"
+            logger.debug("Updated Bearer token: %s...", self._bearer_token[:40])
         return result
 
     def set_bearer_token(self, token: str) -> None:
@@ -241,6 +279,7 @@ class LenovoClient:
             timeout=self._timeout,
         )
         resp.raise_for_status()
+        self._update_bearer_from_response(resp)
         data = resp.json()
 
         lsa_resp = LSAResponse.from_dict(data)
@@ -305,6 +344,7 @@ class LenovoClient:
             timeout=self._timeout,
         )
         resp.raise_for_status()
+        self._update_bearer_from_response(resp)
         data = resp.json()
 
         lsa_resp = LSAResponse.from_dict(data)
