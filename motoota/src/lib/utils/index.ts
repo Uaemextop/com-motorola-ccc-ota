@@ -43,19 +43,10 @@ export function buildDownloadFilename(
   return `${prefix}${sanitized}_${carrier}.zip`;
 }
 
-/** Download a cross-origin file with a specific filename via blob */
-export async function downloadFile(url: string, filename: string): Promise<void> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Download failed: ${res.status}`);
-  const blob = await res.blob();
-  const blobUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = blobUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(blobUrl);
+/** Download a cross-origin file by opening it in a new tab */
+export function downloadFile(url: string, _filename: string): Promise<void> {
+  window.open(url, '_blank', 'noopener,noreferrer');
+  return Promise.resolve();
 }
 
 /* ── Sanitize release notes HTML ─────────────────────────────── */
