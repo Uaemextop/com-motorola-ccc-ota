@@ -1,13 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "com-motorola-ccc-ota",
-  "main": "motoota/worker/index.js",
   "compatibility_date": "2026-04-03",
   "observability": {
     "enabled": true
   },
   "assets": {
-    "directory": "motoota/dist"
+    "directory": "motoota"
   },
   "compatibility_flags": [
     "nodejs_compat"
