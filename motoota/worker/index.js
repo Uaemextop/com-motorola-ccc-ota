@@ -18,6 +18,28 @@ const ALLOWED_HOSTS = [
   'ota-cn-sdc.blurdev.com',
 ];
 
+/** Known firmware CDN hosts (not CDS API servers) */
+const CDN_HOSTS = {
+  'lenovo-ota': {
+    host: 'ota-cdn.lenovo.com',
+    label: 'Lenovo OTA CDN',
+    description: 'S3+CloudFront (us-east-1) — Lenovo/ZUI firmware ZIPs',
+    probeFile: 'firmware/',
+  },
+  'motorola-dlmgr': {
+    host: 'dlmgr.gtm.svcmot.com',
+    label: 'Motorola Download Manager',
+    description: 'Jetty/Akamai — CDS delta OTA packages',
+    probeFile: null,
+  },
+  'lenovo-rsd': {
+    host: 'rsddownload-secure.lenovo.com',
+    label: 'Lenovo RSD (Rescue)',
+    description: 'S3+CloudFront — full factory firmware ZIPs',
+    probeFile: null,
+  },
+};
+
 /** Headers that mirror the real com.motorola.ccc.ota Android app */
 const UPSTREAM_HEADERS = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -118,6 +140,113 @@ async function handleApiCheck(request) {
   }
 }
 
+/**
+ * Probe a CDN host to check its status (HEAD request).
+ *
+ * GET /api/cdn-probe                — probe all known CDN hosts
+ * GET /api/cdn-probe?cdn=lenovo-ota — probe a specific CDN
+ * GET /api/cdn-probe?url=https://ota-cdn.lenovo.com/firmware/xxx.zip — probe a specific URL
+ */
+async function handleCdnProbe(request, url) {
+  if (request.method !== 'GET') {
+    return jsonResponse({ error: 'Use GET' }, 405);
+  }
+
+  const specificUrl = url.searchParams.get('url');
+  if (specificUrl) {
+    return probeSingleUrl(specificUrl);
+  }
+
+  const cdnKey = url.searchParams.get('cdn');
+  if (cdnKey) {
+    const cdn = CDN_HOSTS[cdnKey];
+    if (!cdn) {
+      return jsonResponse({
+        error: `Unknown CDN "${cdnKey}"`,
+        available: Object.keys(CDN_HOSTS),
+      }, 404);
+    }
+    return probeCdn(cdnKey, cdn);
+  }
+
+  // Probe all CDN hosts
+  const results = {};
+  const probes = Object.entries(CDN_HOSTS).map(async ([key, cdn]) => {
+    results[key] = await probeCdnResult(key, cdn);
+  });
+  await Promise.all(probes);
+
+  return jsonResponse({ cdnHosts: results });
+}
+
+async function probeSingleUrl(targetUrl) {
+  try {
+    new URL(targetUrl);
+  } catch {
+    return jsonResponse({ error: 'Invalid URL' }, 400);
+  }
+
+  try {
+    const start = Date.now();
+    const resp = await fetch(targetUrl, { method: 'HEAD', redirect: 'follow' });
+    const latencyMs = Date.now() - start;
+
+    const headers = {};
+    for (const [k, v] of resp.headers.entries()) {
+      headers[k] = v;
+    }
+
+    return jsonResponse({
+      url: targetUrl,
+      status: resp.status,
+      statusText: resp.statusText,
+      latencyMs,
+      headers,
+    });
+  } catch (err) {
+    return jsonResponse({
+      url: targetUrl,
+      status: 'error',
+      error: err.message,
+    }, 502);
+  }
+}
+
+async function probeCdnResult(key, cdn) {
+  const result = {
+    host: cdn.host,
+    label: cdn.label,
+    description: cdn.description,
+  };
+
+  try {
+    const probeUrl = cdn.probeFile
+      ? `https://${cdn.host}/${cdn.probeFile}`
+      : `https://${cdn.host}/`;
+
+    const start = Date.now();
+    const resp = await fetch(probeUrl, { method: 'HEAD', redirect: 'follow' });
+    result.latencyMs = Date.now() - start;
+    result.status = resp.status;
+    result.server = resp.headers.get('server') || 'unknown';
+    result.via = resp.headers.get('via') || null;
+    result.cacheStatus = resp.headers.get('x-cache') || null;
+    result.contentType = resp.headers.get('content-type') || null;
+    result.reachable = resp.status < 500;
+  } catch (err) {
+    result.status = 'error';
+    result.error = err.message;
+    result.reachable = false;
+  }
+
+  return result;
+}
+
+async function probeCdn(key, cdn) {
+  const result = await probeCdnResult(key, cdn);
+  return jsonResponse({ cdn: key, ...result });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -137,7 +266,15 @@ export default {
         service: 'MotoOTA API',
         status: 'ok',
         allowedHosts: ALLOWED_HOSTS,
+        cdnHosts: Object.fromEntries(
+          Object.entries(CDN_HOSTS).map(([k, v]) => [k, { host: v.host, label: v.label }]),
+        ),
       });
+    }
+
+    // ── CDN probe — debug endpoint for verifying CDN status ────
+    if (url.pathname === '/api/cdn-probe') {
+      return handleCdnProbe(request, url);
     }
 
     // ── Static assets (served by Cloudflare Assets binding) ─

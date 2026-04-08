@@ -9,13 +9,22 @@ from moto_ota.config.manager import (
     save_app_config,
     save_device_config,
 )
-from moto_ota.config.servers import DEFAULT_SERVER, SERVERS, Server, ServerEnv
+from moto_ota.config.servers import (
+    CDN_HOSTS,
+    DEFAULT_SERVER,
+    SERVERS,
+    CdnHost,
+    Server,
+    ServerEnv,
+)
 
 __all__ = [
     "APP_CONFIG_FIELDS",
     "AppConfig",
     "CARRIERS",
     "Carrier",
+    "CDN_HOSTS",
+    "CdnHost",
     "DEFAULT_SERVER",
     "DEVICE_CONFIG_FIELDS",
     "DeviceConfig",

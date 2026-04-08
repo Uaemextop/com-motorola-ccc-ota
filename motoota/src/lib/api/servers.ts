@@ -53,6 +53,39 @@ export const SERVERS: Server[] = [
   },
 ];
 
+/** Known firmware CDN hosts (not CDS API servers) */
+export interface CdnHost {
+  id: string;
+  name: string;
+  host: string;
+  description: string;
+  pathPrefix: string;
+}
+
+export const CDN_HOSTS: CdnHost[] = [
+  {
+    id: 'lenovo-ota',
+    name: 'Lenovo OTA CDN',
+    host: 'ota-cdn.lenovo.com',
+    description: 'S3+CloudFront (us-east-1) — firmware ZIPs para Lenovo/ZUI, solo GET, sin resume',
+    pathPrefix: '/firmware/',
+  },
+  {
+    id: 'motorola-dlmgr',
+    name: 'Motorola Download Manager',
+    host: 'dlmgr.gtm.svcmot.com',
+    description: 'Jetty/Akamai — paquetes delta OTA de CDS, URLs firmadas (TTL 600s)',
+    pathPrefix: '/dl/dlws/1/download/',
+  },
+  {
+    id: 'lenovo-rsd',
+    name: 'Lenovo RSD (Rescue)',
+    host: 'rsddownload-secure.lenovo.com',
+    description: 'S3+CloudFront — firmware completo para Rescue, público si sabes el nombre',
+    pathPrefix: '/',
+  },
+];
+
 export const REGIONS = ['Global', 'China'] as const;
 
 export const REGION_SERVERS: Record<string, string[]> = {
@@ -67,4 +100,8 @@ export function getServerById(id: string): Server | undefined {
 export function getServersByRegion(region: string): Server[] {
   const ids = REGION_SERVERS[region] || [];
   return SERVERS.filter((s) => ids.includes(s.id));
+}
+
+export function getCdnHostById(id: string): CdnHost | undefined {
+  return CDN_HOSTS.find((c) => c.id === id);
 }

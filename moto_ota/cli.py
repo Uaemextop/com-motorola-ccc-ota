@@ -37,7 +37,7 @@ from moto_ota.config.manager import (
     load_app_config,
     load_device_config,
 )
-from moto_ota.config.servers import DEFAULT_SERVER, SERVERS, ServerEnv
+from moto_ota.config.servers import CDN_HOSTS, DEFAULT_SERVER, SERVERS, ServerEnv
 from moto_ota.core.client import OTAClient
 from moto_ota.core.downloader import download_chain
 from moto_ota.models.request import build_check_payload
@@ -236,7 +236,7 @@ def download(
 
 @app.command()
 def servers() -> None:
-    """List available CDS servers."""
+    """List available CDS servers and CDN hosts."""
     table = Table(title="CDS Servers")
     table.add_column("Name", style="bold")
     table.add_column("Host")
@@ -247,6 +247,109 @@ def servers() -> None:
         table.add_row(f"[{style}]{env.value}[/]", srv.host, srv.description)
 
     console.print(table)
+
+    cdn_table = Table(title="CDN Hosts")
+    cdn_table.add_column("Key", style="bold")
+    cdn_table.add_column("Host")
+    cdn_table.add_column("Description")
+
+    for key, cdn in CDN_HOSTS.items():
+        cdn_table.add_row(f"[cyan]{key}[/]", cdn.host, cdn.description)
+
+    console.print(cdn_table)
+
+
+@app.command("cdn-probe")
+def cdn_probe(
+    cdn_key: Optional[str] = typer.Argument(
+        None,
+        help="CDN key to probe (e.g. 'lenovo-ota'). Omit to probe all.",
+    ),
+    url: Optional[str] = typer.Option(
+        None, "--url", "-u",
+        help="Probe a specific URL instead of a CDN key.",
+    ),
+) -> None:
+    """Probe firmware CDN hosts to verify reachability.
+
+    Sends a HEAD request to each CDN and reports status, latency,
+    server, and cache headers.  Useful for debugging download issues.
+
+    \b
+    Examples:
+        moto-ota cdn-probe                          # probe all CDNs
+        moto-ota cdn-probe lenovo-ota               # probe Lenovo OTA CDN
+        moto-ota cdn-probe --url https://ota-cdn.lenovo.com/firmware/xxx.zip
+    """
+    if url:
+        _probe_single_url(url)
+        return
+
+    targets = CDN_HOSTS
+    if cdn_key:
+        if cdn_key not in CDN_HOSTS:
+            console.print(
+                f"[red]Unknown CDN key:[/] {cdn_key}\n"
+                f"Available: {', '.join(CDN_HOSTS)}"
+            )
+            raise typer.Exit(1)
+        targets = {cdn_key: CDN_HOSTS[cdn_key]}
+
+    table = Table(title="CDN Probe Results")
+    table.add_column("CDN", style="bold")
+    table.add_column("Host")
+    table.add_column("Status")
+    table.add_column("Latency")
+    table.add_column("Server")
+    table.add_column("Cache")
+
+    import time
+
+    for key, cdn in targets.items():
+        probe_url = f"https://{cdn.host}{cdn.path_prefix}" if cdn.path_prefix else f"https://{cdn.host}/"
+        try:
+            start = time.monotonic()
+            resp = requests.head(probe_url, timeout=10, allow_redirects=True)
+            latency = time.monotonic() - start
+
+            status_style = "green" if resp.status_code < 400 else "yellow" if resp.status_code < 500 else "red"
+            server = resp.headers.get("Server", "?")
+            cache = resp.headers.get("x-cache", resp.headers.get("via", "—"))
+
+            table.add_row(
+                f"[cyan]{key}[/]",
+                cdn.host,
+                f"[{status_style}]{resp.status_code}[/]",
+                f"{latency*1000:.0f}ms",
+                server,
+                cache,
+            )
+        except requests.RequestException as exc:
+            table.add_row(f"[cyan]{key}[/]", cdn.host, "[red]error[/]", "—", "—", str(exc)[:40])
+
+    console.print(table)
+
+
+def _probe_single_url(url: str) -> None:
+    """HEAD-probe a single URL and display all response headers."""
+    import time
+
+    console.print(f"\n[bold]Probing[/] {url}\n")
+    try:
+        start = time.monotonic()
+        resp = requests.head(url, timeout=30, allow_redirects=True)
+        latency = time.monotonic() - start
+    except requests.RequestException as exc:
+        console.print(f"[red]Error:[/] {exc}")
+        raise typer.Exit(1)
+
+    status_style = "green" if resp.status_code < 400 else "yellow" if resp.status_code < 500 else "red"
+    console.print(f"  Status:  [{status_style}]{resp.status_code} {resp.reason}[/]")
+    console.print(f"  Latency: {latency*1000:.0f}ms")
+    console.print(f"  Headers:")
+
+    for k, v in resp.headers.items():
+        console.print(f"    {k}: [dim]{v}[/]")
 
 
 @app.command()
