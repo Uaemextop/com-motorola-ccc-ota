@@ -1,4 +1,4 @@
-"""CDS server endpoints and CDN hosts verified by direct probing (April 2026).
+"""CDS server endpoints, CDN hosts, and GAE APIs verified by probing (April 2026).
 
 Each Motorola CDS environment runs the same GAE ``moto-cds`` application.
 Only the **production** servers carry OTA packages; staging/QA/dev/blurdev
@@ -18,9 +18,10 @@ CDS exposes three POST endpoints (discovered via APK smali analysis):
 1. ``/check``     — Returns OTA info + signed download URLs.
 2. ``/resources`` — Returns **fresh** download URLs for an already-checked
    update (token refresh without full re-check).  Requires ``trackingId``
-   from the ``/check`` response.
+   from the ``/check`` response.  Confirmed: new URL token generated each call.
 3. ``/state``     — Reports update status (downloading/downloaded/installing
-   /installed/failed/canceled/deferred) back to the server.
+   /installed/failed/canceled/deferred) back to the server.  All states
+   return ``proceed=true`` with full response.
 
 Dual CDN architecture:
 
@@ -41,17 +42,65 @@ OTA updates form a **tree** (not a linear chain): different carriers
 may branch to carrier-specific intermediate versions before converging
 back to the main path.
 
+GAE Cloud Endpoints (``/_ah/api/``):
+
+All four CDS environments expose three Cloud Endpoints APIs via the
+standard GAE discovery service (``/_ah/api/discovery/v1/apis``):
+
+1. **contentcheck:v2** — Two authentication-gated check methods:
+
+   - ``emailauth/check`` (POST) — Requires OAuth2 with
+     ``userinfo.email`` scope.  Parameters: context, contextkey, nonce,
+     time.  Returns ``ContentEndpointResponse`` {contentResponse, time}.
+   - ``proxyauth/check`` (POST) — Same params but requires the request
+     to originate from a *different* GAE app (returns "Requests from
+     moto-cds not allowed through proxy" when called on moto-cds itself).
+
+   ContentCheckRequest schema adds ``deviceToken``, ``idType``,
+   ``identityInfo``, ``reason``, ``status`` to the standard check body.
+   ``TriggeredBy`` enum: ``user | setup | notification | polling |
+   other | d2d`` (d2d = device-to-device transfer).
+
+2. **adminEndpointAccess:v2** — Internal admin proxy that forwards
+   arbitrary HTTP requests.  Single method ``postRequest`` with params:
+   ``method``, ``uri``, ``bodyJson``, ``headersJson``.  Returns
+   ``Response`` {body, headers, status}.  Requires OAuth2 auth.
+
+3. **discovery:v1** — Standard GAE API discovery.
+
+API Explorer UI at ``/_ah/api/explorer/``.  The ``key`` query parameter
+can substitute for OAuth (API key auth).  ``/_ah/warmup`` returns 500;
+``/admin`` returns 500.
+
+CDS application versions (from ``/cds/upgrade/{1,2}/versions``):
+- Production: ``20260227t153823`` (all 3 servers: global, PRC, SG)
+- Staging: ``20260219t144007``
+- QA: ``20251204t182430``
+- Dev: ``20260217t112859``
+
+CDS API v3+ returns ``UPGRADE_RESOURCE_NOT_FOUND`` (exists but not
+populated).  ``/format/json`` and ``/format/proto`` suffixes accepted
+but same result.
+
 svcmot.cn infrastructure (Azure China East):
 - ``svcmot.cn`` / ``www.svcmot.cn``: Apache static landing page (139.219.132.123)
-- ``api.svcmot.cn``: Jetty 12.0.16, CORS ``*``, cloud-service framework
-  present but **no** services deployed (all ``NO_MATCHING_SERVICE``)
+- ``api.svcmot.cn``: Jetty 12.0.16, cloud-service framework present
+  but **no** services deployed.  With ``.json`` format marker → 403
+  ``NO_MATCHING_SERVICE``.  Without → 403 ``URI_MISSING_FORMAT_STRING``.
 - ``dlmgr-ec.svcmot.cn``: Apache behind Tencent EdgeOne CDN, 403/404 only
+- ``dlmgredg.svcmot.cn``: NXDOMAIN (no DNS record)
+- ``motocare.svcmot.cn``: NXDOMAIN
+- ``models*.aicore.svcmot.cn``: NXDOMAIN (all 4 subdomains)
+- ``cliqr-repo-mmi.svcmot.cn``: NXDOMAIN
+
+svcmot.com infrastructure:
 - ``argo.svcmot.com``: Jetty 12.0.16 with ``/cloud-service-1.0`` WAR
-  deployed (directory listing enabled); ``/ws`` service is registered
-- ``api-sg.svcmot.com`` / ``mapi-sg.svcmot.com``: Jetty 12.0.16 on Azure
-  Singapore (52.187.127.159), ``/cloud-service-1.0/`` paths return
-  ``URI_FORMAT_STRING_ERROR`` (services exist but require ``.json``/``.pb``
-  format marker)
+  (directory listing shows ``WEB-INF/`` from Oct 2025, 32 bytes).
+  ``/ws`` endpoint accepts ``POST, GET, PUT, DELETE`` with CORS ``*``
+  and ``Authorization`` header but returns 403/404 for all content types.
+- ``api-sg.svcmot.com``: Jetty 12.0.16, ``/cloud-service-1.0/`` paths
+  return ``URI_FORMAT_STRING_ERROR``.  Same ``NO_MATCHING_SERVICE`` as
+  ``api.svcmot.cn``.
 """
 
 from __future__ import annotations
@@ -114,6 +163,58 @@ class Server:
     def versions_url(self) -> str:
         """Build the ``/versions`` endpoint URL."""
         return f"{self.base_url}/cds/upgrade/1/versions"
+
+    # ── GAE Cloud Endpoints ─────────────────────────────────────────
+
+    def discovery_url(self) -> str:
+        """GAE API discovery listing (``contentcheck``, ``adminEndpointAccess``)."""
+        return f"{self.base_url}/_ah/api/discovery/v1/apis"
+
+    def emailauth_check_url(
+        self,
+        guid: str,
+        nonce: str,
+        time_val: str,
+        context: str = "ota",
+    ) -> str:
+        """Build the ``emailauth/check`` Cloud Endpoint URL.
+
+        Requires ``Authorization: Bearer <google_oauth_token>`` with
+        ``userinfo.email`` scope.
+        """
+        return (
+            f"{self.base_url}/_ah/api/contentcheck/v2/emailauth/check"
+            f"?context={context}&contextkey={guid}"
+            f"&nonce={nonce}&time={time_val}"
+        )
+
+    def proxyauth_check_url(
+        self,
+        guid: str,
+        nonce: str,
+        time_val: str,
+        context: str = "ota",
+    ) -> str:
+        """Build the ``proxyauth/check`` Cloud Endpoint URL.
+
+        Must originate from a trusted GAE peer app (not from
+        ``moto-cds`` itself — returns 403 otherwise).
+        """
+        return (
+            f"{self.base_url}/_ah/api/contentcheck/v2/proxyauth/check"
+            f"?context={context}&contextkey={guid}"
+            f"&nonce={nonce}&time={time_val}"
+        )
+
+    def admin_proxy_url(self) -> str:
+        """Build the ``adminEndpointAccess`` proxy URL.
+
+        POST with JSON body ``{method, uri, bodyJson, headersJson}``.
+        Requires OAuth2 ``userinfo.email`` scope.
+        """
+        return (
+            f"{self.base_url}/_ah/api/adminEndpointAccess/v2/request/post"
+        )
 
 
 @dataclass(frozen=True)
