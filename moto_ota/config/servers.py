@@ -80,7 +80,48 @@ CDS application versions (from ``/cds/upgrade/{1,2}/versions``):
 
 CDS API v3+ returns ``UPGRADE_RESOURCE_NOT_FOUND`` (exists but not
 populated).  ``/format/json`` and ``/format/proto`` suffixes accepted
-but same result.
+but same result.  ``OPTIONS`` / ``PATCH`` on valid CDS paths returns
+``UPGRADE_RESOURCE_BUSY``; on invalid sub-paths ``UPGRADE_RESOURCE_NOT_FOUND``.
+
+``contentTimestamp`` behaviour: sending the server's own timestamp
+(e.g. ``1735015291000``) means "I already have this version" → returns
+``proceed=true`` with **null** content.  Any other value (``0``, future,
+earlier) returns normal update with full content + download URLs.
+
+DLMGR download token structure (176 bytes base64-decoded):
+
+- **Bytes 0–15**: random nonce (changes every request)
+- **Bytes 16–175**: AES-encrypted payload (160 bytes, **static** across
+  all packages within the same session — does NOT contain the package ID
+  but likely an expiry + HMAC)
+- Nonce is cryptographically bound: replacing it returns HTTP 400
+- WIFI and CELL tokens are **identical** (same URL for both networks)
+- TTL is 600 s (from ``urlTtlSeconds``)
+
+DLMGR API versions:
+
+- ``/dl/dlws/1/download/{signed_token}`` — returns the actual OTA ZIP
+  (HTTP 206 Range supported, ``application/octetstream``)
+- ``/dl/dlws/2/download/{packageID}`` — returns JSON
+  ``DOWNLOAD_RESOURCE_NOT_FOUND`` (structured error, not files)
+- ``/dl/dlws/3/`` also exists (same JSON error structure)
+
+DLMGR ``/dl/`` directory listing:
+
+- ``META-INF/`` (44 B, Jan 29 2025)
+- ``WEB-INF/`` (47 B, Jan 29 2025, contents protected — 404)
+- ``build.html`` → ``20240411.1929``
+- ``crossdomain.xml`` → ``<allow-access-from domain="*"/>``
+- ``revision.html`` → ``developer``
+- ``status.html`` → ``SUCCESS``
+
+EDGECAST public access:
+
+13 of 17 lamu_g OTA packages are publicly accessible on EDGECAST
+(``dlmgredg-vz.gtm.svcmot.com/{packageID}``) with no authentication.
+Only the 4 oldest delta packages (steps 1–2 of each carrier chain) are
+exclusively available via DLMGR signed tokens (404 on EDGECAST).
+Content-Length matches CDS ``size`` field exactly.
 
 svcmot.cn infrastructure (Azure China East):
 - ``svcmot.cn`` / ``www.svcmot.cn``: Apache static landing page (139.219.132.123)
