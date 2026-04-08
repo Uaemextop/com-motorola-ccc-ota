@@ -9,10 +9,36 @@ A successful response looks like::
       "content": { ... update metadata ... },
       "contentResources": [ { "url": "...", "tags": [...], ... } ],
       "trackingId": "...",
-      ...
+      "reportingTags": "TRIGGER-USER",
+      "pollAfterSeconds": 86400,
+      "smartUpdateBitmap": 7,
+      "uploadFailureLogs": false
     }
 
 When no update is available: ``proceed=false``, ``content=null``.
+
+``content`` metadata keys (from full dump, April 2026):
+
+- **Versioning**: ``displayVersion``, ``sourceDisplayVersion``, ``version``,
+  ``flavour``, ``minVersion``, ``model``
+- **Identity**: ``otaSourceSha1``, ``otaTargetSha1``, ``packageID``,
+  ``md5_checksum``, ``size``
+- **Timestamps**: ``sourceBuildTimestamp``, ``targetBuildTimestamp``
+- **Install**: ``abInstallType`` (``streamingOnAb``), ``rebootRequired``,
+  ``forced``, ``wifionly``, ``oemConfigUpdate``
+- **Streaming A/B**: ``streamingData`` → ``header`` (FILE_HASH, FILE_SIZE,
+  METADATA_HASH, METADATA_SIZE) + ``additionalInfo`` (payload.bin offset/size)
+- **Deployment**: ``deploymentPlanPhase`` (``Open`` / ``Default``),
+  ``deploymentPhaseForAdvancedNotice``, ``severityType``
+- **Whitelisting**: ``serialNoListType``, ``imeiListType``, ``emailListType``,
+  ``mccListType``, ``mccmncListType`` (values: ``NA`` / ``Inclusive``)
+- **UI**: ``uiWorkflowControl`` (per-trigger settings), ``featureEnableBitmap``,
+  ``showPreDownloadDialog``, ``showDownloadProgress``, etc.
+- **Content**: ``releaseNotes`` (HTML), ``preInstallNotes``,
+  ``postInstallNotes``, ``upgradeNotification``
+- **Timing**: ``annoy``, ``installReminder``, ``forceUpgradeTime``,
+  ``forceDownloadTime``, ``forceInstallTime``
+- **Tracking**: ``trackingId``, ``reportingTags`` (``"TRIGGER-USER"``)
 """
 
 from __future__ import annotations
@@ -33,6 +59,7 @@ class CheckResponse:
     poll_after_seconds: int = 0
     smart_update_bitmap: int = -1
     upload_failure_logs: bool = False
+    reporting_tags: str = ""
 
     # Update metadata (``None`` when no update)
     content: Optional[dict[str, Any]] = None
@@ -70,6 +97,7 @@ class CheckResponse:
             poll_after_seconds=payload.get("pollAfterSeconds", 0),
             smart_update_bitmap=payload.get("smartUpdateBitmap", -1),
             upload_failure_logs=payload.get("uploadFailureLogs", False),
+            reporting_tags=payload.get("reportingTags", ""),
             content=payload.get("content"),
             content_resources=payload.get("contentResources"),
             x_cds_content_exists=x_cds,
@@ -88,6 +116,13 @@ class CheckResponse:
         if not self.content_resources:
             return []
         return [r["url"] for r in self.content_resources if r.get("url")]
+
+    @property
+    def cdn_tags(self) -> list[list[str]]:
+        """Extract CDN tags (e.g. ``[['WIFI','DLMGR_AGENT'], ...]``)."""
+        if not self.content_resources:
+            return []
+        return [r.get("tags", []) for r in self.content_resources]
 
     @property
     def source_version(self) -> str:
@@ -134,3 +169,56 @@ class CheckResponse:
         if self.content:
             return self.content.get("md5_checksum", "")
         return ""
+
+    @property
+    def release_notes(self) -> str:
+        """HTML release notes (security patch level + changelog)."""
+        if self.content:
+            return self.content.get("releaseNotes", "")
+        return ""
+
+    @property
+    def model(self) -> str:
+        if self.content:
+            return self.content.get("model", "")
+        return ""
+
+    @property
+    def deployment_phase(self) -> str:
+        """Rollout phase: ``Open``, ``Default``, etc."""
+        if self.content:
+            return self.content.get("deploymentPlanPhase", "")
+        return ""
+
+    @property
+    def ab_install_type(self) -> str:
+        """A/B install type: ``streamingOnAb``, etc."""
+        if self.content:
+            return self.content.get("abInstallType", "")
+        return ""
+
+    @property
+    def streaming_data(self) -> Optional[dict[str, Any]]:
+        """Streaming A/B OTA metadata (payload offsets, hashes)."""
+        if self.content:
+            return self.content.get("streamingData")
+        return None
+
+    @property
+    def feature_enable_bitmap(self) -> int:
+        """Per-content feature bitmap (different from smartUpdateBitmap)."""
+        if self.content:
+            return int(self.content.get("featureEnableBitmap", 0))
+        return 0
+
+    @property
+    def is_forced(self) -> bool:
+        if self.content:
+            return bool(self.content.get("forced", False))
+        return False
+
+    @property
+    def is_wifi_only(self) -> bool:
+        if self.content:
+            return bool(self.content.get("wifionly", False))
+        return False
