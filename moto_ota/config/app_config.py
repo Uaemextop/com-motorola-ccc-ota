@@ -2,6 +2,19 @@
 
 Stored at ``~/.config/moto-ota/app.json``.  Every field has a sensible
 default so the file is optional.
+
+HTTP headers and request body fields are derived from the decompiled
+``com.motorola.ccc.ota`` APK (smali analysis, April 2026):
+
+- ``WebServiceThread.smali``: verification headers
+  (``x-moto-accept-verification-methods``, ``x-moto-verification-info``,
+  ``Authorization: Bearer``).
+- ``AdvancedFileDownloader.smali``: download headers
+  (``Accept-Encoding: identity``, ``Connection: close``, ``If-Match``,
+  ``Range``).
+- ``BuildPropReader.smali``: full ``extraInfo`` body fields.
+- ``Configs.smali``: endpoint paths and backoff values.
+- ``FileUploadService.smali``: hardcoded ``X-Moto-Auth-Sign`` + ``Secretkey``.
 """
 
 from __future__ import annotations
@@ -18,6 +31,7 @@ VALID_REGIONS: list[str] = ["Global", "China"]
 REGION_SERVERS: dict[str, list[str]] = {
     "Global": [
         ServerEnv.PRODUCTION_GLOBAL.value,
+        ServerEnv.PRODUCTION_SG.value,
         ServerEnv.STAGING.value,
         ServerEnv.QA.value,
         ServerEnv.DEV.value,
@@ -85,13 +99,34 @@ class AppConfig:
 
     @property
     def headers(self) -> dict[str, str]:
-        """Build HTTP headers dict from config."""
+        """Build HTTP headers dict from config.
+
+        Includes ``x-moto-accept-verification-methods`` discovered in
+        the APK ``WebServiceThread.smali`` — sent with every CDS request.
+        """
         return {
             "Content-Type": self.content_type,
             "User-Agent": self.user_agent,
             "Accept-Encoding": self.accept_encoding,
             "Connection": self.connection,
+            "x-moto-accept-verification-methods": "CID,GOOGLE_EMAIL",
         }
+
+    @staticmethod
+    def download_headers(etag: str | None = None) -> dict[str, str]:
+        """Build HTTP headers for OTA file downloads.
+
+        Mirrors ``AdvancedFileDownloader.smali`` from the APK:
+        ``Accept-Encoding: identity`` (no gzip), ``Connection: close``.
+        Optionally adds ``If-Match`` for resume verification.
+        """
+        hdrs: dict[str, str] = {
+            "Accept-Encoding": "identity",
+            "Connection": "close",
+        }
+        if etag:
+            hdrs["If-Match"] = etag
+        return hdrs
 
 
 # ── field metadata for the TUI config menu ───────────────────────────
