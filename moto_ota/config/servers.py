@@ -334,8 +334,15 @@ CDN_HOSTS: dict[str, CdnHost] = {
         host="ota-cdn.lenovo.com",
         label="Lenovo OTA CDN",
         description=(
-            "S3+CloudFront (us-east-1) — Lenovo/ZUI firmware ZIPs, "
-            "GET only (POST blocked), no Range/resume, no bucket listing"
+            "S3+CloudFront (us-east-1).  DNS chain: ota-cdn.lenovo.com → "
+            "skycdn.com.cn → cdn-ota-us.lenovo.com → CloudFront.  "
+            "/firmware/ is a real S3 directory object (200, 0 bytes).  "
+            "Files at /firmware/{id}.zip are public A/B OTA ZIPs "
+            "(payload.bin + metadata.pb).  Supports HTTP 206 Range + "
+            "Accept-Ranges: bytes.  POST blocked.  S3 listing blocked.  "
+            "ID format: {YYYY}{MDD}{HHMMSS}0-{suffix}.zip (sparse, "
+            "unpredictable).  S3 bucket: lenovo-ota (us-west-1).  "
+            "/soap/ returns 200/0-bytes (S3 empty-key wildcard)."
         ),
         path_prefix="/firmware/",
     ),
@@ -365,11 +372,80 @@ CDN_HOSTS: dict[str, CdnHost] = {
         host="rsddownload-secure.lenovo.com",
         label="Lenovo RSD (Rescue)",
         description=(
-            "S3+CloudFront — full factory firmware ZIPs for Rescue, "
-            "public if you know the exact filename"
+            "S3+CloudFront (us-east-1) — full factory firmware ZIPs for "
+            "Lenovo Rescue / Smart Assistant.  Bucket fully locked down "
+            "(April 2026): all files return 403 AccessDenied even with "
+            "known filenames.  Requires AWS SigV4 presigned URLs from "
+            "the LSA API (lsa.lenovo.com).  S3 bucket name: "
+            "moto-rsd-prod-secure (us-east-1).  /soap/ returns "
+            "200/0-bytes (S3 empty-key wildcard)."
         ),
         path_prefix="/",
     ),
+    "lolinet-mirror": CdnHost(
+        host="mirrors.lolinet.com",
+        label="Lolinet Firmware Mirror",
+        description=(
+            "h5ai v0.30.0 directory listing.  60 Motorola device "
+            "codenames across 2024 (31), 2025 (27), 2026 (2).  "
+            "Firmware naming: fastboot_{codename}_user_{android}_"
+            "{version}_{hash}_release-keys.zip.  API: POST to "
+            "/_h5ai/public/index.php with JSON {action:'get', "
+            "items:{href:'/path/', what:1}}."
+        ),
+        path_prefix="/firmware/lenomola/",
+    ),
 }
+
+# ── Lenovo ROW OTA server (com.lenovo.ota APK) ──────────────────────
+#
+# Extracted from smali analysis of com.lenovo.ota (April 2026):
+#
+# Endpoints:
+#   1. https://ota.lenovo.com/ota-server/firmware/query/for-text-desc
+#      POST application/x-www-form-urlencoded
+#      Params: action=querynewfirmware, devicemodel, deviceid,
+#              curfirmwarever, locale, nationcode, pid, ChecksumType
+#      Response: XML <firmwareupdate> with <firmware> children
+#        <name>, <object_to_name>, <downloadurl>, <md5>, <sha256>,
+#        <size>, <level>, <needbackup>, <desc_en>, <desc_cn>, ...
+#
+#   2. https://ota.lenovo.com/ota-server/firmware/config/query
+#      POST: action=queryconfig + same params
+#      Response: JSON with download_mode, update_mode, query_frequency,
+#                fuse_precept, event_report_upload, etc.
+#
+#   3. https://fus.lenovomm.com/firmware/3.1/updateservlet
+#      POST: action=queryoptionalparameter|reportsubmit
+#      (Times out from datacenter IPs as of April 2026)
+#
+# No authentication required.  No custom headers.  Default
+# Content-Type: application/x-www-form-urlencoded.
+#
+# Server: AWS ELB (us-east-1).  DNS: ota.lenovo.com → skycdn.com.cn
+# → uds-production-alb.us-east-1.elb.amazonaws.com.
+#
+# Device identity (from ro.* system properties):
+#   - devicemodel ← ro.product.ota.model (fallback: Build.MODEL)
+#   - deviceid ← ro.odm.lenovo.gsn → lenovosn2 → serial → MAC → UUID
+#   - carrier/image code ← ro.odm.lenovo.easyimage.code
+#   - region ← ro.odm.lenovo.region (ROW/PRC)
+#   - platform ← ro.odm.lenovo.platform (MTK/QUALCOMM)
+#
+# Valid models (confirmed April 2026): TB320FC, TB-X606F, TB-X606X,
+# TB-X705F, TB-X705L, TB-X306F, TB-J706F, TB-J606F, TB-J606L,
+# TB-8504X, TB-8705F, TB-8705N.  All currently at latest version.
+#
+# Download URLs returned in <downloadurl> are complete — no signing
+# or construction needed.  Files are on ota-cdn.lenovo.com/firmware/
+# and support HTTP 206 Range.
+
+LENOVO_OTA_QUERY_URL = (
+    "https://ota.lenovo.com/ota-server/firmware/query/for-text-desc"
+)
+LENOVO_OTA_CONFIG_URL = (
+    "https://ota.lenovo.com/ota-server/firmware/config/query"
+)
+LENOVO_FUS_URL = "https://fus.lenovomm.com/firmware/3.1/updateservlet"
 
 DEFAULT_SERVER = ServerEnv.PRODUCTION_PRC
