@@ -23,6 +23,42 @@ CDS exposes three POST endpoints (discovered via APK smali analysis):
    /installed/failed/canceled/deferred) back to the server.  All states
    return ``proceed=true`` with full response.
 
+**Authentication (verified April 2026):**
+
+The ``/check`` endpoint with ``/key/{guid}`` path requires
+``User-Agent: com.motorola.ccc.ota/3.0`` (or containing that substring).
+Without it, **all** ``/key/`` paths return 403 Forbidden (empty body).
+Without ``/key/`` in the path, the server returns
+``UPGRADE_RESOURCE_NOT_FOUND``.  No CID token, Google auth, or other
+credentials are needed — the User-Agent is the **only** gate.
+The ``x-moto-accept-verification-methods`` and
+``x-moto-verification-info`` headers can contain any fake values.
+
+**CDS only serves DELTA OTA** (all packages have ``pre-build`` in
+metadata).  Full firmware (fastboot images) is exclusively available
+from ``rsddownload-secure.lenovo.com`` via presigned S3 URLs obtained
+through the LSA API (``lsa.lenovo.com``).  As of April 2026 the LSA
+login endpoint requires ``Content-Type: application/json`` (returns
+415 for urlencoded) and returns 500 from datacenter IPs.
+
+**Verified chain (moto g15 / lamu_g / retgb, April 2026):**
+
+9 delta steps from GUID ``0d5cc74421f2e8a``, total 1.63 GB:
+
+=====  ========================  ========================  =========  =============
+Step   Source                    Target                     Size (MB)  CDN
+=====  ========================  ========================  =========  =============
+1      VVTA35.51-18-6            VVTA35.51-28-15               105.9  DLMGR_AGENT
+2      VVTA35.51-28-15           VVTA35.51-65-5                338.5  DLMGR_AGENT
+3      VVTA35.51-65-5            VVTA35.51-100                 134.1  DLMGR_AGENT
+4      VVTA35.51-100             VVTA35.51-114                 883.3  DLMGR_AGENT
+5      VVTA35.51-114             VVTA35.51-124                  68.4  DLMGR_AGENT
+6      VVTA35.51-124             VVTA35.51-137                  75.9  EDGECAST
+7      VVTA35.51-137             VVTAS35.51-137-2               22.2  DLMGR_AGENT
+8      VVTAS35.51-137-2          VVTA35.51-137-10               27.3  DLMGR_AGENT
+9      VVTA35.51-137-10          VVTAS35.51-137-10-3            18.5  DLMGR_AGENT
+=====  ========================  ========================  =========  =============
+
 Dual CDN architecture:
 
 - **DLMGR_AGENT** (``dlmgr.gtm.svcmot.com``): Jetty 9.4.8, signed token
@@ -372,13 +408,35 @@ CDN_HOSTS: dict[str, CdnHost] = {
         host="rsddownload-secure.lenovo.com",
         label="Lenovo RSD (Rescue)",
         description=(
-            "S3+CloudFront (us-east-1) — full factory firmware ZIPs for "
-            "Lenovo Rescue / Smart Assistant.  Bucket fully locked down "
-            "(April 2026): all files return 403 AccessDenied even with "
-            "known filenames.  Requires AWS SigV4 presigned URLs from "
-            "the LSA API (lsa.lenovo.com).  S3 bucket name: "
-            "moto-rsd-prod-secure (us-east-1).  /soap/ returns "
-            "200/0-bytes (S3 empty-key wildcard)."
+            "S3+CloudFront (us-east-1) — **full factory firmware** ZIPs "
+            "(fastboot images) for Lenovo Rescue & Smart Assistant.  "
+            "Bucket: moto-rsd-prod-secure.  ALL files require AWS "
+            "SigV4 presigned URLs obtained from the LSA API.\n\n"
+            "LSA flow (from HAR capture, March 2026):\n"
+            "1. POST /Interface/dictionary/getApiInfo.jhtml "
+            "   → OAuth2 login_url at passport-glb.lenovo.com\n"
+            "2. User logs in at passport.lenovo.com → WUST token\n"
+            "3. POST /Interface/user/lenovoIdLogin.jhtml "
+            "   body={client:{version:'7.5.4.2'},dparams:{wust,guid}}\n"
+            "   → Authorization header with session token\n"
+            "4. POST /Interface/rescueDevice/getModelNames.jhtml "
+            "   body={dparams:{country,category}} → model list\n"
+            "5. POST /Interface/rescueDevice/getResource.jhtml "
+            "   body={dparams:{modelName,marketName,simCount,country}}\n"
+            "   → romResource.uri with presigned S3 URL (7-day TTL)\n\n"
+            "All LSA bodies use JSON: {client:{version},dparams:{...},"
+            "language,windowsInfo}.  Headers: Content-Type: "
+            "application/json, Request-Tag: lmsa, "
+            "clientVersion: 7.5.4.2, Authorization: {token}.\n\n"
+            "Example romResource from HAR:\n"
+            "  name: fastboot_lamu_g_user_15_VVTAS35.51-137-2-1_"
+            "c99c2a_release-keys.zip\n"
+            "  AWS cred: AKIAS37TSJMJUUCJCY4T, us-east-1\n"
+            "  Presigned TTL: X-Amz-Expires=604800 (7 days)\n\n"
+            "FAKE WUST login returns code=0000 + userId but the "
+            "token only works for unauthenticated endpoints "
+            "(getBroadcast, getFeedbackIssueInfo).  Rescue "
+            "endpoints (getModelNames, getResource) return 403."
         ),
         path_prefix="/",
     ),
