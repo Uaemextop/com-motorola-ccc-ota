@@ -28,6 +28,26 @@ CDS exposes three POST endpoints (discovered via APK smali analysis):
 The ``/check`` endpoint with ``/key/{guid}`` path requires
 ``User-Agent: com.motorola.ccc.ota/3.0`` (or containing that substring).
 Without it, **all** ``/key/`` paths return 403 Forbidden (empty body).
+
+**OTA App v36.00.035 (Android 16, versionCode 3600035) — Key Differences:**
+
+Source: https://github.com/Uaemextop/com-motorola-ccc-ota_3
+Full analysis: decompiled/ota_v36_analysis.md
+
+- Downloads now hosted on ``storage.googleapis.com`` (GCS) instead of
+  DLMGR/EDGECAST CDN. No references to "dlmgr" or "edgecast" in smali.
+- Download headers (``wifiHeaders``/``cellHeaders``) from CDS ``/resources``
+  response are iterated and added to download HTTP request as-is (GCS auth).
+- GCS auth detection: ``addAuthorizationHeader()`` checks if URL host is
+  ``storage.googleapis.com`` over HTTPS → signals auth header needed.
+- CDS request headers start as EMPTY HashMap in WebServiceThread constructor.
+  No hardcoded User-Agent override in v36 code (yet server still requires it).
+- Hardcoded secrets unchanged: APPIID=``MGVKHZWFLNFPYQYLCTOVJLD5LURFMPKZ``,
+  APPSECERET=``zdG4h4k2NOm6MSh``, X-Moto-Auth-Sign=``d928bee85b45cffe7b0f21084dd3d20e``.
+- CDS server version as of April 2026: ``20260227t153823`` (Feb 27, 2026).
+- All previously known lamu_g GUIDs now return ``proceed=false`` from all IPs.
+  Either GUIDs rotated or CDS applies IP-based rate limiting on datacenter IPs.
+- ``pollAfterSeconds=172800`` (48h) returned for all requests = possible block.
 Without ``/key/`` in the path, the server returns
 ``UPGRADE_RESOURCE_NOT_FOUND``.  No CID token, Google auth, or other
 credentials are needed — the User-Agent is the **only** gate.
