@@ -507,3 +507,208 @@ LENOVO_OTA_CONFIG_URL = (
 LENOVO_FUS_URL = "https://fus.lenovomm.com/firmware/3.1/updateservlet"
 
 DEFAULT_SERVER = ServerEnv.PRODUCTION_PRC
+
+
+# ── LSA (Lenovo Smart Assistant) API ─────────────────────────────────
+#
+# Decompiled from Motorola "Software Fix" v7.5.5.19 (April 2026):
+#   Source: https://en-us.support.motorola.com/app/answers/detail/a_id/168095
+#   Format: NSIS → .NET 4.7.2 WPF → ILSpy decompilation to C#
+#   Full decompiled sources: decompiled/software_fix/*.decompiled.cs
+#
+# Base URL:  https://lsa.lenovo.com
+# Interface: https://lsa.lenovo.com/Interface
+#
+# ── Config Keys (from Software Fix.exe.config) ──
+#
+# AESKey:                 jdkei3ffkjijut46#$%6y7U8km4p<mdT
+# AESIV:                  52,*u^yhNjk<./O0
+# ConnectionField:        PLJoR50KSVLIIiQC
+# DefaultDecryptPassword: OSD
+# MotoApkMinVersionCode:  1100600
+# MotoApkRandomKeyVersion:1200000
+#
+# ── Authentication Flow (from HAR + ILSpy decompilation) ──
+#
+# TWO login flows exist:
+#
+# Flow A — OAuth2 PKCE (current, v7.5+):
+#   1. POST /dictionary/getApiInfo.jhtml {key:"TIP_URL"} → OAuth2 URL (NO AUTH)
+#      Returns: https://passport-glb.lenovo.com/v1.0/utility/lenovoid/oauth2/authorize
+#      with: client_id, response_type=code, code_challenge (S256), state
+#      Server generates fresh state+code_challenge per request (code_verifier server-side)
+#   2. User completes OAuth2 in browser → redirect to /Tips/lenovoIdSuccess.html
+#      with: code, redirect_uri, client_id, code_verifier in URL params
+#   3. GetTokenStr() exchanges code for access_token via POST to authorize base URL:
+#      body: grant_type=authorization_code, redirect_uri, code, client_id, code_verifier
+#      → access_token in JSON response
+#   4. WebApiUrl.LOGIN_TOKEN = access_token
+#
+# Flow B — Legacy WUST (older, HAR capture):
+#   1. passport.lenovo.com/glbwebauthnv6/preLogin → browser login
+#   2. Redirect to /Tips/lenovoIdSuccess.html?lenovoid.wust=XXX
+#   3. POST /user/lenovoIdLogin.jhtml
+#      body: {client:{version}, dparams:{wust, guid}, language, windowsInfo}
+#      → Response **Authorization header** contains JWT token
+#   4. WebApiContext.JWT_TOKEN = Authorization header value
+#
+# Flow C — WebView2 callback (alternative):
+#   1. Login in embedded WebView2 → redirect with ?Authorization=XXX&fullName=YYY
+#   2. LoginByLenovoID() sets JWT_TOKEN from Authorization query param
+#   3. Calls /user/getSFUserInfo.jhtml to get user profile
+#
+# JWT does NOT rotate per request (from decompiled C# - no response header extraction).
+# The JWT is set ONCE at login and reused for all requests.
+# Token timeout: code "402" = expired, code "403" = invalid, code "404" = auth failure.
+#
+# Headers for ALL requests (from RequestBase decompiled C#):
+#   User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36...
+#   Content-Type: application/json
+#   Cache-Control: no-cache
+#   Request-Tag: lmsa
+#   clientVersion: {version}
+#   windowsInfo: {base64(OS version + system type)}
+#   language: {locale}
+#   Authorization: Bearer {JWT}  (when addAuthorizationHeader=true)
+#   clientUUID: {uuid}  (when JWT is set)
+#
+# Body format (RequestModel class):
+#   {client:{version:str}, dparams:{...}, language:str, windowsInfo:str}
+#
+# OAuth2 client_id (verified April 2026):
+#   127cbff4e99dd5579db0627769509be972a3f38ad0dd11f2f2a7947516c923f0
+#
+# ── Endpoints (62 total from WebApiUrl + WebServicesContext) ──
+#
+# --- Client ---
+# /client/initToken.jhtml            INIT_TOKEN
+# /client/deleteToken.jhtml          DISPOSE_TOKEN
+# /client/getUserGuide.jhtml         USER_GUIDE
+# /client/clientHelp.jhtml           HELP_URI
+# /client/getNextUpdateClient.jhtml  CLIENT_VERSION
+# /client/getPluginCategoryList.jhtml UPDATE_VERSION
+# /client/getClientPlugins.jhtml     PLUGIN_VERSION
+# /client/renewFileLink.jhtml        UPDATE_DOWNLOAD_URL (refresh S3 URLs)
+# /client/motoCare.jhtml             LOAD_WARRANTY_BANNER
+# /client/discountCoupon.jhtml       LOAD_COUPON
+# /client/languagePack.jhtml         (from HAR)
+#
+# --- Rescue/Flash (FIRMWARE DOWNLOAD) ---
+# /rescueDevice/getNewResource.jhtml     RESUCE_AUTOMATCH_GETROM ★
+# /rescueDevice/getResource.jhtml        RESUCE_MANUAL_GETROM ★
+# /rescueDevice/getNewResourceByImei.jhtml GET_RESOURCES_BY_IMEI ★ (flash plugin)
+# /rescueDevice/getNewResourceBySN.jhtml GET_RESOURCES_BY_SN ★ (flash plugin)
+# /rescueDevice/getRomMatchParams.jhtml  RESUCE_AUTOMATCH_GETPARAMS_MAPPING
+# /rescueDevice/getParamType.jhtml       GET_UPGRADEFLASH_MATCH_TYPES
+# /rescueDevice/getMarketSupport.jhtml   RESUCE_CHECK_SUPPORT_FASTBOOT
+# /rescueDevice/smartMarketNames.jhtml   LOAD_SMART_DEVICE
+# /rescueDevice/modelReadConfigration.jhtml MODEL_READ_CONFIG
+# /rescueDevice/getModelNames.jhtml      GET_ALLMODELNAMES (lists ALL models) ★
+# /rescueDevice/getRescueModelNames.jhtml GET_MARKETNAMES (flash plugin)
+# /rescueDevice/getRescueModelRecipe.jhtml GET_FASTBOOTDATA_RECIPE (flash recipe) ★
+# /rescueDevice/modelListByMarketName.jhtml GET_MODELS_BY_MARKETNAME (flash plugin)
+# /rescueDevice/getXamlList.jhtml        RESUCE_MANUAL_GETSTEPTIPS (flash plugin)
+#
+# --- Device ---
+# /device/getDeviceInfo.jhtml        GET_DEVICE_INFO
+# /device/getDeviceIcon.jhtml        GET_DEVICE_ICON
+#
+# --- Common ---
+# /common/rsa.jhtml                  GET_PUBLIC_KEY (no auth needed)
+#
+# --- Model ---
+# /model/getDriverSpecialConfig.jhtml RESUCE_CHECK_MODEL_NAME_DRIVERS
+# /model/getYoutubeVideo.jhtml       LOAD_YOUTUBE_INFO
+# /model/rules.jhtml                 ROMFILE_CHECK_RULES
+# /model/isReadSupport.jhtml         GET_SUPPORT_FASTBOOT_BY_MODELNAME
+#
+# --- User ---
+# /user/lenovoIdLogin.jhtml          LENOVOID_LOGIN
+# /user/login.jhtml                  USER_LOGIN
+# /user/guestLogin.jhtml             USER_GUEST_LOGIN
+# /user/recordLogin.jhtml            USER_RECORD_LOGIN
+# /user/logout.jhtml                 USER_LOGOUT
+# /user/getSFUserInfo.jhtml          LENOVOID_LOGIN_CALLBACK
+# /user/forgotPassword.jhtml         USER_FORGOT_PASSWORD
+# /user/changePassword.jhtml         USER_CHANGE_PASSWORD
+#
+# --- Other ---
+# /priv/getRomList.jhtml             Webwervice_Get_RomResources
+# /priv/getPrivInfo.jhtml            PRIV_GET_PRIV_INFO
+# /notice/getNoticeInfo.jhtml        NOTICE_URL
+# /notice/getBroadcast.jhtml         NOTICE_BROADCAST_URL
+# /dictionary/getApiInfo.jhtml       CALL_API_URL
+# /survey/*.jhtml                    Survey endpoints
+# /feedback/*.jhtml                  Feedback endpoints
+# /vip/*.jhtml                       B2B/VIP endpoints
+# /moli/*.jhtml                      Moli AI assistant
+# /apk/download.jhtml                CHECK_MA_VERSION
+# /dataCollection/*.jhtml            Data collection/logging
+# /guide/getGuideQuestion.jhtml      GET_MUTIL_TUTORIALS_QUESTIONS
+# /registeredModel/addModels.jhtml   UPLOAD_USER_DEVICE
+# /registeredModel/models.jhtml      DELETE_USER_DEVICE
+#
+# ── Passport Integration ──
+#
+# https://passport.lenovo.com/interserver/authen/1.2/getaccountid
+#   ?lpsust={wust}&realm=lmsaclient
+#
+# ── Warranty APIs ──
+#
+# https://supportapi.lenovo.com/v3/warranty/{imei}
+# https://microapi-us-sde.lenovo.com/token  (OAuth2 client_credentials)
+# https://microapi-us-sde.lenovo.com/v1.0/service/poi_request
+# https://ibase.lenovo.com/POIRequest.aspx
+# https://api-pre-mds-us.lenovo.com/auth/oauth/token
+# https://api-pre-mds-us.lenovo.com/order/order/rnt/getUnit
+#
+# ── Verified Results (April 2026) ──
+#
+# Endpoints that work WITHOUT auth:
+#   /common/rsa.jhtml → RSA public key
+#   /notice/getBroadcast.jhtml → empty list
+#   /apk/download.jhtml → "APK not exist"
+#   /rescueDevice/modelReadConfigration.jhtml → "Parameter not configured"
+#   /dictionary/getApiInfo.jhtml → OAuth URLs
+#
+# Endpoints that REQUIRE Bearer JWT:
+#   /rescueDevice/getModelNames.jhtml → ALL Motorola models (122KB)
+#   /rescueDevice/getResource.jhtml → presigned S3 firmware URLs ★
+#   /rescueDevice/getNewResource.jhtml → auto-match firmware ★
+#   /client/renewFileLink.jhtml → refresh expired S3 URLs ★
+#   /priv/getPrivInfo.jhtml → privilege info
+#
+# ── BLOCKING: Akamai Bot Manager ──
+#
+# passport.lenovo.com POST requests timeout from datacenter IPs.
+# Akamai sets _abck cookie during GET, then blocks POSTs without
+# valid bot manager sensor data.  curl_cffi impersonation gets
+# HTTP/2 stream reset (err 92) or infinite read timeout.
+# Real browser or residential proxy required for WUST acquisition.
+#
+# Once you have a WUST, the lenovoIdLogin.jhtml call works from
+# ANY IP and returns the JWT in the Authorization response header.
+
+LSA_BASE_URL = "https://lsa.lenovo.com"
+LSA_INTERFACE_URL = f"{LSA_BASE_URL}/Interface"
+
+# Key firmware endpoints
+LSA_GET_RESOURCE_URL = f"{LSA_INTERFACE_URL}/rescueDevice/getResource.jhtml"
+LSA_GET_NEW_RESOURCE_URL = f"{LSA_INTERFACE_URL}/rescueDevice/getNewResource.jhtml"
+LSA_GET_MODEL_NAMES_URL = f"{LSA_INTERFACE_URL}/rescueDevice/getModelNames.jhtml"
+LSA_RENEW_FILE_LINK_URL = f"{LSA_INTERFACE_URL}/client/renewFileLink.jhtml"
+LSA_RSA_PUBLIC_KEY_URL = f"{LSA_INTERFACE_URL}/common/rsa.jhtml"
+LSA_LOGIN_URL = f"{LSA_INTERFACE_URL}/user/lenovoIdLogin.jhtml"
+LSA_NETWORK_CHECK_URL = f"{LSA_BASE_URL}/lmsa-web/index.jsp"
+
+# Passport OAuth
+PASSPORT_LOGIN_URL = (
+    "https://passport.lenovo.com/glbwebauthnv6/preLogin"
+    "?lenovoid.action=uilogin"
+    "&lenovoid.realm=lmsaclient"
+    "&lenovoid.cb=https://lsa.lenovo.com/Tips/lenovoIdSuccess.html"
+)
+PASSPORT_ACCOUNT_URL = (
+    "https://passport.lenovo.com/interserver/authen/1.2/getaccountid"
+    "?lpsust={wust}&realm=lmsaclient"
+)
