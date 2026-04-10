@@ -90,6 +90,7 @@ select option {
 
 tbody tr {
   transition: background-color 0.15s ease;
+  contain: layout style;
 }
 
 /* ── Animations ────────────────────────────────────────────── */
@@ -110,7 +111,7 @@ tbody tr {
 }
 
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -129,7 +130,7 @@ tbody tr {
 }
 
 .animate-fade-in {
-  animation: fade-in 0.4s ease-out both;
+  animation: fade-in 0.3s ease-out both;
 }
 
 /* Support animation delay via inline style */
@@ -296,6 +297,30 @@ tbody tr {
   .glass-card-mobile {
     border-radius: 1rem;
   }
+
+  /* Reduce animation complexity on mobile */
+  .stars-sm,
+  .stars-md,
+  .stars-lg {
+    animation-duration: 200s;
+  }
+}
+
+/* ── Containment utilities ─────────────────────────────────── */
+
+.contain-inline-size {
+  contain: inline-size;
+}
+
+.contain-style {
+  contain: style;
+}
+
+/* ── Content Visibility for off-screen rendering optimization ─ */
+
+.content-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 400px;
 }
 
 /* Ensure smooth scrolling on iOS */

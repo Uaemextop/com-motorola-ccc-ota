@@ -1,6 +1,5 @@
 /* ── Servers Page ───────────────────────────────────────────── */
 
-import { motion } from 'framer-motion';
 import {
   Server,
   Globe2,
@@ -16,7 +15,8 @@ import { useAppStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 
 export default function ServersPage() {
-  const { config, updateConfig } = useAppStore();
+  const config = useAppStore((s) => s.config);
+  const updateConfig = useAppStore((s) => s.updateConfig);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -49,11 +49,10 @@ export default function ServersPage() {
                 const isActive = server.status === 'active';
 
                 return (
-                  <motion.div
+                  <div
                     key={server.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.1 }}
+                    className="animate-fade-in"
+                    style={{ animationDelay: `${i * 0.08}s` }}
                   >
                     <button
                       onClick={() => updateConfig({ server: server.id })}
@@ -105,7 +104,7 @@ export default function ServersPage() {
                         https://{server.host}
                       </div>
                     </button>
-                  </motion.div>
+                  </div>
                 );
               })}
             </div>

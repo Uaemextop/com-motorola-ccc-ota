@@ -25,7 +25,10 @@ const KEYBOARD_SHORTCUTS: Record<string, Page> = {
 };
 
 export default function Header() {
-  const { currentPage, setPage, toggleSidebar, loading } = useAppStore();
+  const currentPage = useAppStore((s) => s.currentPage);
+  const setPage = useAppStore((s) => s.setPage);
+  const toggleSidebar = useAppStore((s) => s.toggleSidebar);
+  const loading = useAppStore((s) => s.loading);
   const [online, setOnline] = useState(navigator.onLine);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const shortcutsRef = useRef<HTMLDivElement>(null);

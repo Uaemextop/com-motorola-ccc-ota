@@ -1,6 +1,5 @@
-/* ── Progress Bar ───────────────────────────────────────────── */
+/* ── Progress Bar (CSS transition — no framer-motion overhead) ── */
 
-import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
 interface ProgressBarProps {
@@ -33,11 +32,9 @@ export default function ProgressBar({
         </div>
       )}
       <div className="h-2 overflow-hidden rounded-full bg-white/5">
-        <motion.div
-          initial={{ width: 0 }}
-          animate={{ width: `${percent}%` }}
-          transition={{ duration: 0.3, ease: 'easeOut' }}
-          className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-500"
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-500 transition-[width] duration-300 ease-out"
+          style={{ width: `${percent}%` }}
         />
       </div>
     </div>

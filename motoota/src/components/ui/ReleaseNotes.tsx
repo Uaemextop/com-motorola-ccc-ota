@@ -1,6 +1,6 @@
 /* ── Release Notes — collapsible release notes display ─────────── */
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FileText, ChevronDown } from 'lucide-react';
 import { cn, sanitizeReleaseNotes } from '@/lib/utils';
@@ -12,6 +12,9 @@ interface ReleaseNotesProps {
 
 export default function ReleaseNotes({ html, defaultOpen = false }: ReleaseNotesProps) {
   const [open, setOpen] = useState(defaultOpen);
+
+  /* Memoize the expensive DOMParser-based sanitization */
+  const sanitized = useMemo(() => sanitizeReleaseNotes(html), [html]);
 
   if (!html) return null;
 
@@ -40,7 +43,7 @@ export default function ReleaseNotes({ html, defaultOpen = false }: ReleaseNotes
           >
             <div
               className="prose prose-sm prose-invert max-w-none [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-violet-300 [&_p]:text-sm [&_p]:text-gray-300 [&_p]:leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: sanitizeReleaseNotes(html) }}
+              dangerouslySetInnerHTML={{ __html: sanitized }}
             />
           </motion.div>
         )}

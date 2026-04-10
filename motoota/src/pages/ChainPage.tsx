@@ -35,7 +35,9 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 export default function ChainPage() {
-  const { config, chain, updateConfig } = useAppStore();
+  const config = useAppStore((s) => s.config);
+  const chain = useAppStore((s) => s.chain);
+  const updateConfig = useAppStore((s) => s.updateConfig);
   const { walk, walking } = useChainWalk();
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
 
@@ -184,19 +186,18 @@ export default function ChainPage() {
               </div>
             </GlassCard>
 
-            {/* Timeline */}
+            {/* Timeline — uses CSS staggered fade-in instead of per-item framer-motion */}
             {chain.map((step, i) => (
-              <motion.div
+              <div
                 key={i}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.05 }}
+                className="animate-fade-in"
+                style={{ animationDelay: `${i * 0.04}s` }}
               >
                 <button
                   onClick={() => setSelectedStep(selectedStep === i ? null : i)}
                   className={cn(
                     'flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition-all',
-                    'bg-white/[0.03] backdrop-blur-sm shadow-[0_0_40px_rgba(0,0,0,0.3)]',
+                    'bg-white/[0.03] shadow-[0_0_40px_rgba(0,0,0,0.3)]',
                     selectedStep === i
                       ? 'border-violet-500/30 bg-violet-500/[0.06]'
                       : 'border-white/5 hover:border-white/10 hover:bg-white/[0.05]',
@@ -227,7 +228,7 @@ export default function ChainPage() {
                     )}
                   />
                 </button>
-              </motion.div>
+              </div>
             ))}
 
             {/* ── Detail panel for selected step ─────────────────── */}

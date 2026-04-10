@@ -1,6 +1,6 @@
 /* ── Scan Page ──────────────────────────────────────────────── */
 
-import { useState, useMemo, memo } from 'react';
+import { useState, useMemo, memo, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -60,17 +60,37 @@ const STATUS_ICONS = {
   error: XCircle,
 };
 
+/* ── Sort direction indicator (outside component to avoid re-creation) ── */
+function SortIcon({ field, activeField, dir }: { field: SortField; activeField: SortField; dir: SortDir }) {
+  if (activeField !== field) return <ArrowUpDown className="h-3 w-3 text-gray-600" />;
+  return dir === 'asc'
+    ? <ArrowUp className="h-3 w-3 text-blue-400" />
+    : <ArrowDown className="h-3 w-3 text-blue-400" />;
+}
+
 export default function ScanPage() {
-  const { config, scanResults, scanProgress, updateConfig } = useAppStore();
+  const config = useAppStore((s) => s.config);
+  const scanResults = useAppStore((s) => s.scanResults);
+  const scanProgress = useAppStore((s) => s.scanProgress);
+  const updateConfig = useAppStore((s) => s.updateConfig);
   const { scan, scanning } = useCarrierScan();
   const [filter, setFilter] = useState<CarrierStatus | 'all'>('all');
   const [regionFilter, setRegionFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [selectedCarrier, setSelectedCarrier] = useState<string | null>(null);
   const [selectedStep, setSelectedStep] = useState<number | null>(null);
   const [sortField, setSortField] = useState<SortField>('status');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const regions = useMemo(() => getUniqueRegions(), []);
+
+  /* Debounce search input to avoid re-filtering on every keystroke */
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => setDebouncedSearchQuery(searchQuery), 150);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+  }, [searchQuery]);
 
   const {
     register,
@@ -95,8 +115,8 @@ export default function ScanPage() {
     const filtered = scanResults.filter((r) => {
       if (filter !== 'all' && r.status !== filter) return false;
       if (regionFilter !== 'all' && r.carrier.region !== regionFilter) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
+      if (debouncedSearchQuery) {
+        const q = debouncedSearchQuery.toLowerCase();
         return (
           r.carrier.code.toLowerCase().includes(q) ||
           r.carrier.name.toLowerCase().includes(q)
@@ -137,7 +157,7 @@ export default function ScanPage() {
     });
 
     return filtered;
-  }, [scanResults, filter, regionFilter, searchQuery, sortField, sortDir]);
+  }, [scanResults, filter, regionFilter, debouncedSearchQuery, sortField, sortDir]);
 
   const statusCounts = useMemo(() => {
     const counts = { open: 0, whitelisted: 0, 'no-content': 0, error: 0 };
@@ -171,21 +191,14 @@ export default function ScanPage() {
     showToast(success ? 'Copiado al portapapeles' : 'No se pudo copiar al portapapeles', success ? 'success' : 'error');
   };
 
-  const toggleSort = (field: SortField) => {
+  const toggleSort = useCallback((field: SortField) => {
     if (sortField === field) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortField(field);
       setSortDir('asc');
     }
-  };
-
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return <ArrowUpDown className="h-3 w-3 text-gray-600" />;
-    return sortDir === 'asc'
-      ? <ArrowUp className="h-3 w-3 text-blue-400" />
-      : <ArrowDown className="h-3 w-3 text-blue-400" />;
-  };
+  }, [sortField]);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -368,15 +381,15 @@ export default function ScanPage() {
             <GlassCard className="overflow-hidden p-0">
               <div className="max-h-[500px] overflow-auto">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 z-10 border-b border-white/5 bg-[#0d0d1a]/95 backdrop-blur">
+                  <thead className="sticky top-0 z-10 border-b border-white/5 bg-[#0d0d1a]">
                     <tr className="text-left text-xs uppercase tracking-wider text-gray-500">
-                      <th className="px-4 py-3"><button onClick={() => toggleSort('carrier')} className="flex items-center gap-1 hover:text-gray-300"><span>Carrier</span><SortIcon field="carrier" /></button></th>
-                      <th className="px-4 py-3"><button onClick={() => toggleSort('name')} className="flex items-center gap-1 hover:text-gray-300"><span>Nombre</span><SortIcon field="name" /></button></th>
-                      <th className="hidden px-4 py-3 sm:table-cell"><button onClick={() => toggleSort('region')} className="flex items-center gap-1 hover:text-gray-300"><span>Región</span><SortIcon field="region" /></button></th>
-                      <th className="px-4 py-3"><button onClick={() => toggleSort('status')} className="flex items-center gap-1 hover:text-gray-300"><span>Estado</span><SortIcon field="status" /></button></th>
-                      <th className="hidden px-4 py-3 sm:table-cell"><button onClick={() => toggleSort('version')} className="flex items-center gap-1 hover:text-gray-300"><span>Versión</span><SortIcon field="version" /></button></th>
-                      <th className="hidden px-4 py-3 md:table-cell"><button onClick={() => toggleSort('chain')} className="flex items-center gap-1 hover:text-gray-300"><span>Cadena</span><SortIcon field="chain" /></button></th>
-                      <th className="hidden px-4 py-3 text-right md:table-cell"><button onClick={() => toggleSort('size')} className="ml-auto flex items-center gap-1 hover:text-gray-300"><span>Tamaño</span><SortIcon field="size" /></button></th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('carrier')} className="flex items-center gap-1 hover:text-gray-300"><span>Carrier</span><SortIcon field="carrier" activeField={sortField} dir={sortDir} /></button></th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('name')} className="flex items-center gap-1 hover:text-gray-300"><span>Nombre</span><SortIcon field="name" activeField={sortField} dir={sortDir} /></button></th>
+                      <th className="hidden px-4 py-3 sm:table-cell"><button onClick={() => toggleSort('region')} className="flex items-center gap-1 hover:text-gray-300"><span>Región</span><SortIcon field="region" activeField={sortField} dir={sortDir} /></button></th>
+                      <th className="px-4 py-3"><button onClick={() => toggleSort('status')} className="flex items-center gap-1 hover:text-gray-300"><span>Estado</span><SortIcon field="status" activeField={sortField} dir={sortDir} /></button></th>
+                      <th className="hidden px-4 py-3 sm:table-cell"><button onClick={() => toggleSort('version')} className="flex items-center gap-1 hover:text-gray-300"><span>Versión</span><SortIcon field="version" activeField={sortField} dir={sortDir} /></button></th>
+                      <th className="hidden px-4 py-3 md:table-cell"><button onClick={() => toggleSort('chain')} className="flex items-center gap-1 hover:text-gray-300"><span>Cadena</span><SortIcon field="chain" activeField={sortField} dir={sortDir} /></button></th>
+                      <th className="hidden px-4 py-3 text-right md:table-cell"><button onClick={() => toggleSort('size')} className="ml-auto flex items-center gap-1 hover:text-gray-300"><span>Tamaño</span><SortIcon field="size" activeField={sortField} dir={sortDir} /></button></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">

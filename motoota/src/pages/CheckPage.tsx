@@ -49,7 +49,12 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 export default function CheckPage() {
-  const { config, lastCheck, error, updateConfig, setLastCheck, setError } = useAppStore();
+  const config = useAppStore((s) => s.config);
+  const lastCheck = useAppStore((s) => s.lastCheck);
+  const error = useAppStore((s) => s.error);
+  const updateConfig = useAppStore((s) => s.updateConfig);
+  const setLastCheck = useAppStore((s) => s.setLastCheck);
+  const setError = useAppStore((s) => s.setError);
   const { check, checking } = useOtaCheck();
   const [showRaw, setShowRaw] = useState(false);
   const [showRequest, setShowRequest] = useState(false);

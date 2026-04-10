@@ -35,7 +35,8 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 export default function ConfigPage() {
-  const { config, updateConfig } = useAppStore();
+  const config = useAppStore((s) => s.config);
+  const updateConfig = useAppStore((s) => s.updateConfig);
 
   const {
     register,

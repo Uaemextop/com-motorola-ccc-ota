@@ -1,7 +1,6 @@
 /* ── Home Page ──────────────────────────────────────────────── */
 
 import { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
 import {
   Search,
   Link2,
@@ -90,12 +89,7 @@ export default function HomePage() {
   return (
     <div className="space-y-8">
       {/* Hero */}
-      <motion.div
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="text-center"
-      >
+      <div className="text-center animate-fade-in">
         <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-500/20 bg-blue-500/5 px-4 py-2 text-sm text-blue-400">
           <Zap className="h-4 w-4" />
           Motorola CDS API Client
@@ -107,19 +101,17 @@ export default function HomePage() {
           Verifica, explora y descarga actualizaciones OTA de Motorola directamente
           desde los servidores CDS oficiales.
         </p>
-      </motion.div>
+      </div>
 
       {/* Stats row */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.3 }}
-        className="grid grid-cols-2 gap-3 sm:grid-cols-4"
+      <div
+        className="grid grid-cols-2 gap-3 sm:grid-cols-4 animate-fade-in"
+        style={{ animationDelay: '0.3s' }}
       >
         {STATS.map((stat, i) => (
           <StatCard key={stat.label} stat={stat} index={i} />
         ))}
-      </motion.div>
+      </div>
 
       {/* Feature cards */}
       <div className="grid gap-4 sm:grid-cols-2">
@@ -154,11 +146,9 @@ export default function HomePage() {
       </div>
 
       {/* Info footer */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.8 }}
-        className="rounded-xl border border-white/5 bg-white/[0.02] p-4 text-center text-xs text-gray-500"
+      <div
+        className="rounded-xl border border-white/5 bg-white/[0.02] p-4 text-center text-xs text-gray-500 animate-fade-in"
+        style={{ animationDelay: '0.8s' }}
       >
         <p>
           MotoOTA es una herramienta de código abierto. No está afiliada con Motorola Mobility LLC.
@@ -166,7 +156,7 @@ export default function HomePage() {
         <p className="mt-1">
           Los datos se obtienen directamente de los servidores CDS de Motorola vía CORS proxy.
         </p>
-      </motion.div>
+      </div>
     </div>
   );
 }

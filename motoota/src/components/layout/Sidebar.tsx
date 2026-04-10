@@ -33,7 +33,10 @@ const NAV_ITEMS: NavItem[] = [
 ];
 
 export default function Sidebar() {
-  const { currentPage, setPage, sidebarOpen, setSidebarOpen } = useAppStore();
+  const currentPage = useAppStore((s) => s.currentPage);
+  const setPage = useAppStore((s) => s.setPage);
+  const sidebarOpen = useAppStore((s) => s.sidebarOpen);
+  const setSidebarOpen = useAppStore((s) => s.setSidebarOpen);
 
   return (
     <>
