@@ -308,12 +308,8 @@ tbody tr {
 
 /* ── Containment utilities ─────────────────────────────────── */
 
-.contain-inline-size {
-  contain: inline-size;
-}
-
-.contain-style {
-  contain: style;
+.contain-paint {
+  contain: inline-size style;
 }
 
 /* ── Content Visibility for off-screen rendering optimization ─ */
