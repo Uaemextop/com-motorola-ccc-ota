@@ -1,20 +1,23 @@
 /* ── App Root ───────────────────────────────────────────────── */
 
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
 import { ToastContainer } from '@/components/ui/Toast';
 import AnimatedBackground from '@/components/backgrounds/AnimatedBackground';
+import Spinner from '@/components/ui/Spinner';
 import { useAppStore } from '@/lib/store';
-import HomePage from '@/pages/HomePage';
-import CheckPage from '@/pages/CheckPage';
-import ChainPage from '@/pages/ChainPage';
-import ScanPage from '@/pages/ScanPage';
-import ServersPage from '@/pages/ServersPage';
-import ConfigPage from '@/pages/ConfigPage';
 
-const PAGES: Record<string, React.ComponentType> = {
+/* Lazy-load pages — each page is code-split into its own chunk */
+const HomePage = lazy(() => import('@/pages/HomePage'));
+const CheckPage = lazy(() => import('@/pages/CheckPage'));
+const ChainPage = lazy(() => import('@/pages/ChainPage'));
+const ScanPage = lazy(() => import('@/pages/ScanPage'));
+const ServersPage = lazy(() => import('@/pages/ServersPage'));
+const ConfigPage = lazy(() => import('@/pages/ConfigPage'));
+
+const PAGES: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
   home: HomePage,
   check: CheckPage,
   chain: ChainPage,
@@ -80,7 +83,13 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
             >
-              <PageComponent />
+              <Suspense fallback={
+                <div className="flex items-center justify-center py-20">
+                  <Spinner size="lg" />
+                </div>
+              }>
+                <PageComponent />
+              </Suspense>
             </motion.div>
           </AnimatePresence>
         </main>

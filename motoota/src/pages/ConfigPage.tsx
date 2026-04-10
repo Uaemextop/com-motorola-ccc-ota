@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
 import CarrierSelect from '@/components/ui/CarrierSelect';
+import JsonViewer from '@/components/ui/JsonViewer';
 import { showToast } from '@/components/ui/Toast';
 import { useAppStore } from '@/lib/store';
 import { SERVERS } from '@/lib/api/servers';
@@ -167,7 +168,7 @@ export default function ConfigPage() {
           </FieldGroup>
 
           {/* Actions */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-col gap-3 pt-2 sm:flex-row">
             <button
               type="submit"
               className={cn(
@@ -185,7 +186,7 @@ export default function ConfigPage() {
             <button
               type="button"
               onClick={onReset}
-              className="flex items-center gap-2 rounded-xl border border-white/10 px-6 py-3 text-sm font-medium text-gray-400 transition-colors hover:bg-white/5 hover:text-white"
+              className="flex items-center justify-center gap-2 rounded-xl border border-white/10 px-6 py-3 text-sm font-medium text-gray-400 transition-colors hover:bg-white/5 hover:text-white"
             >
               <RotateCcw className="h-4 w-4" />
               Restablecer
@@ -197,9 +198,7 @@ export default function ConfigPage() {
       {/* Current config display */}
       <GlassCard className="space-y-2">
         <h4 className="text-sm font-semibold text-gray-400">Configuración actual (JSON)</h4>
-        <pre className="overflow-auto rounded-lg border border-white/5 bg-black/20 p-3 font-mono text-xs text-gray-400">
-          {JSON.stringify(config, null, 2)}
-        </pre>
+        <JsonViewer data={config} accent="violet" maxHeight="300px" />
       </GlassCard>
     </div>
   );

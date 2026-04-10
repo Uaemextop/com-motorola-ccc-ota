@@ -10,6 +10,7 @@ import {
   Activity,
 } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
+import JsonViewer from '@/components/ui/JsonViewer';
 import { REGIONS, getServersByRegion } from '@/lib/api/servers';
 import { useAppStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
@@ -121,14 +122,18 @@ export default function ServersPage() {
             <code className="font-mono text-gray-300">/cds/upgrade/1/check/ctx/{'{context}'}/key/{'{guid}'}</code>
           </div>
           <p>Endpoint principal para verificar actualizaciones OTA.</p>
-          <div className="rounded-lg border border-white/5 bg-black/20 p-3">
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-3 shadow-lg shadow-amber-500/5">
             <p className="mb-1 text-[10px] uppercase tracking-wider text-gray-500">Headers</p>
-            <pre className="font-mono text-[11px] text-gray-400">
-{`Content-Type: application/json; charset=utf-8
-User-Agent: com.motorola.ccc.ota
-Accept-Encoding: gzip
-Connection: Keep-Alive`}
-            </pre>
+            <JsonViewer
+              data={{
+                'Content-Type': 'application/json; charset=utf-8',
+                'User-Agent': 'com.motorola.ccc.ota',
+                'Accept-Encoding': 'gzip',
+                'Connection': 'Keep-Alive',
+              }}
+              accent="amber"
+              maxHeight="200px"
+            />
           </div>
         </div>
       </GlassCard>
