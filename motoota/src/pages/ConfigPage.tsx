@@ -1,6 +1,5 @@
 /* ── Config Page ────────────────────────────────────────────── */
 
-import { motion } from 'framer-motion';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -218,17 +217,13 @@ function FieldGroup({
   children: React.ReactNode;
 }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, x: -10 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="space-y-2"
-    >
+    <div className="space-y-2 animate-fade-in">
       <div className="flex items-center gap-2">
         <Icon className="h-4 w-4 text-gray-500" />
         <label className="text-sm font-medium text-gray-300">{label}</label>
       </div>
       <p className="text-xs text-gray-500">{description}</p>
       {children}
-    </motion.div>
+    </div>
   );
 }

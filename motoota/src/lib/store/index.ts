@@ -4,6 +4,21 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Page, AppConfig, CheckResponse, ScanResult } from '@/lib/types';
 
+/* ── Hash-based routing helpers ─────────────────────────────── */
+const VALID_PAGES = new Set<Page>(['home', 'check', 'chain', 'scan', 'servers', 'config']);
+
+function pageFromHash(): Page {
+  const raw = window.location.hash.replace('#/', '').replace('#', '').split('?')[0];
+  return VALID_PAGES.has(raw as Page) ? (raw as Page) : 'home';
+}
+
+function pushHash(page: Page) {
+  const hash = page === 'home' ? '#/' : `#/${page}`;
+  if (window.location.hash !== hash) {
+    window.history.pushState(null, '', hash);
+  }
+}
+
 interface AppState {
   /* ── Navigation ────────────────────────────────── */
   currentPage: Page;
@@ -40,8 +55,11 @@ interface AppState {
 export const useAppStore = create<AppState>()(
   persist(
     (set) => ({
-      currentPage: 'home',
-      setPage: (page) => set({ currentPage: page, error: null }),
+      currentPage: pageFromHash(),
+      setPage: (page) => {
+        pushHash(page);
+        set({ currentPage: page, error: null });
+      },
       sidebarOpen: false,
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
@@ -81,3 +99,21 @@ export const useAppStore = create<AppState>()(
     },
   ),
 );
+
+/* ── Listen for browser back/forward (popstate) ─────────────── */
+/* This listener is intentionally module-scoped — it persists for the lifetime
+   of the SPA. The store is a singleton so cleanup is unnecessary. */
+if (typeof window !== 'undefined') {
+  window.addEventListener('popstate', () => {
+    const page = pageFromHash();
+    const currentPage = useAppStore.getState().currentPage;
+    if (page !== currentPage) {
+      useAppStore.setState({ currentPage: page, error: null });
+    }
+  });
+
+  // Set initial hash if missing
+  if (!window.location.hash) {
+    window.history.replaceState(null, '', '#/');
+  }
+}
