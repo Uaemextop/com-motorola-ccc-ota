@@ -1,5 +1,6 @@
 /* ── Home Page ──────────────────────────────────────────────── */
 
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Search,
@@ -10,6 +11,7 @@ import {
   Shield,
   Download,
   Zap,
+  ArrowRight,
 } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
 import { useAppStore } from '@/lib/store';
@@ -55,11 +57,30 @@ const FEATURES: FeatureCard[] = [
 ];
 
 const STATS = [
-  { icon: Smartphone, label: 'Carriers', value: '438+' },
-  { icon: Server, label: 'Servidores', value: '6' },
-  { icon: Shield, label: 'Verificación', value: 'MD5' },
-  { icon: Download, label: 'Descarga', value: 'Directa' },
+  { icon: Smartphone, label: 'Carriers', value: 438, suffix: '+', isNumber: true },
+  { icon: Server, label: 'Servidores', value: 6, suffix: '', isNumber: true },
+  { icon: Shield, label: 'Verificación', value: 0, suffix: 'MD5', isNumber: false },
+  { icon: Download, label: 'Descarga', value: 0, suffix: 'Directa', isNumber: false },
 ];
+
+/** Animated counter hook */
+function useCountUp(target: number, duration = 1200, enabled = true) {
+  const [count, setCount] = useState(0);
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (!enabled || startedRef.current || target === 0) return;
+    startedRef.current = true;
+    const start = performance.now();
+    function tick(now: number) {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(Math.round(target * eased));
+      if (progress < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }, [target, duration, enabled]);
+  return count;
+}
 
 export default function HomePage() {
   const setPage = useAppStore((s) => s.setPage);
@@ -94,15 +115,7 @@ export default function HomePage() {
         className="grid grid-cols-2 gap-3 sm:grid-cols-4"
       >
         {STATS.map((stat, i) => (
-          <GlassCard key={stat.label} delay={0.1 * i} className="flex items-center gap-3 p-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
-              <stat.icon className="h-5 w-5 text-blue-400" />
-            </div>
-            <div>
-              <p className="text-xl font-bold text-white">{stat.value}</p>
-              <p className="text-xs text-gray-500">{stat.label}</p>
-            </div>
-          </GlassCard>
+          <StatCard key={stat.label} stat={stat} index={i} />
         ))}
       </motion.div>
 
@@ -113,16 +126,19 @@ export default function HomePage() {
             key={feature.page}
             hover
             delay={0.15 * i}
-            className="group"
+            className="group gradient-border"
           >
             <button
               onClick={() => setPage(feature.page)}
               className="flex w-full flex-col items-start text-left"
             >
-              <div
-                className={`mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${feature.gradient} shadow-lg`}
-              >
-                <feature.icon className="h-6 w-6 text-white" />
+              <div className="mb-4 flex w-full items-center justify-between">
+                <div
+                  className={`flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${feature.gradient} shadow-lg`}
+                >
+                  <feature.icon className="h-6 w-6 text-white" />
+                </div>
+                <ArrowRight className="h-4 w-4 text-gray-600 transition-all group-hover:translate-x-1 group-hover:text-blue-400" />
               </div>
               <h3 className="text-lg font-semibold text-white group-hover:text-blue-300 transition-colors">
                 {feature.title}
@@ -150,5 +166,23 @@ export default function HomePage() {
         </p>
       </motion.div>
     </div>
+  );
+}
+
+/* ── Stat Card with animated counter ──────────────────────── */
+function StatCard({ stat, index }: { stat: typeof STATS[number]; index: number }) {
+  const count = useCountUp(stat.value, 1200, stat.isNumber);
+  return (
+    <GlassCard delay={0.1 * index} className="flex items-center gap-3 p-4">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
+        <stat.icon className="h-5 w-5 text-blue-400" />
+      </div>
+      <div>
+        <p className="text-xl font-bold text-white">
+          {stat.isNumber ? `${count}${stat.suffix}` : stat.suffix}
+        </p>
+        <p className="text-xs text-gray-500">{stat.label}</p>
+      </div>
+    </GlassCard>
   );
 }

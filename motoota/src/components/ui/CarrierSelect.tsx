@@ -116,7 +116,7 @@ export default function CarrierSelect({ value, onChange, error }: CarrierSelectP
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Buscar carrier..."
-                className="w-full bg-transparent py-1 pl-7 pr-7 text-sm text-white placeholder:text-gray-600 focus:outline-none"
+                className="w-full bg-transparent py-1 pl-7 pr-7 text-sm text-white placeholder:text-gray-500 focus:outline-none"
               />
               {query && (
                 <button

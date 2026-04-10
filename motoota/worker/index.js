@@ -37,7 +37,12 @@ const CORS_HEADERS = {
 function jsonResponse(body, status = 200, extra = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...CORS_HEADERS, ...extra },
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      'X-Response-Time': new Date().toISOString(),
+      ...CORS_HEADERS,
+      ...extra,
+    },
   });
 }
 
@@ -108,7 +113,15 @@ async function handleApiCheck(request) {
       responseHeaders['x-cds-content-exists'] = xcds;
     }
 
-    return new Response(data, { status: upstream.status, headers: { ...responseHeaders, ...CORS_HEADERS } });
+    return new Response(data, {
+      status: upstream.status,
+      headers: {
+        ...responseHeaders,
+        ...CORS_HEADERS,
+        'X-Response-Time': new Date().toISOString(),
+        'Cache-Control': 'no-store',
+      },
+    });
   } catch (err) {
     return jsonResponse({
       error: 'Failed to reach upstream CDS server',

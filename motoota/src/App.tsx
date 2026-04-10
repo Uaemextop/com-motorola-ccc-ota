@@ -1,5 +1,6 @@
 /* ── App Root ───────────────────────────────────────────────── */
 
+import { useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
@@ -22,10 +23,24 @@ const PAGES: Record<string, React.ComponentType> = {
   config: ConfigPage,
 };
 
+const PAGE_TITLES: Record<string, string> = {
+  home: 'MotoOTA — Motorola OTA Updates',
+  check: 'Verificar Actualización — MotoOTA',
+  chain: 'Cadena de Actualizaciones — MotoOTA',
+  scan: 'Escanear Carriers — MotoOTA',
+  servers: 'Servidores CDS — MotoOTA',
+  config: 'Configuración — MotoOTA',
+};
+
 export default function App() {
   const currentPage = useAppStore((s) => s.currentPage);
   const error = useAppStore((s) => s.error);
   const setError = useAppStore((s) => s.setError);
+
+  // Update document title on page change
+  useEffect(() => {
+    document.title = PAGE_TITLES[currentPage] || 'MotoOTA';
+  }, [currentPage]);
 
   const PageComponent = PAGES[currentPage] || HomePage;
 
@@ -48,6 +63,7 @@ export default function App() {
                 <p>{error}</p>
                 <button
                   onClick={() => setError(null)}
+                  aria-label="Cerrar error"
                   className="rounded px-2 py-1 text-xs text-red-400 hover:bg-red-500/10"
                 >
                   Cerrar

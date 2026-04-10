@@ -16,6 +16,7 @@ import {
   Tag,
   Clock,
   ExternalLink,
+  ClipboardList,
 } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
 import CarrierSelect from '@/components/ui/CarrierSelect';
@@ -92,7 +93,7 @@ export default function ChainPage() {
                 placeholder="ej: 0d5cc74421f2e8a"
                 className={cn(
                   'w-full rounded-xl border bg-white/[0.03] px-4 py-3 text-sm text-white',
-                  'placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500/40',
+                  'placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40',
                   errors.guid ? 'border-red-500/40' : 'border-white/10',
                 )}
               />
@@ -151,6 +152,32 @@ export default function ChainPage() {
                 <span className="font-semibold text-white">
                   {(chain.reduce((acc, s) => acc + (s.content?.sizeBytes || 0), 0) / (1024 * 1024)).toFixed(1)} MB total
                 </span>
+                <button
+                  onClick={async () => {
+                    const networkTag = config.downloadNetwork === 'wifi' ? 'WIFI' : 'CELL';
+                    const urls = chain
+                      .flatMap((step) =>
+                        step.contentResources
+                          .filter((r) => r.tags.some((t) => t.toUpperCase() === networkTag))
+                          .map((r) => r.url),
+                      )
+                      .filter(Boolean);
+                    if (urls.length === 0) {
+                      showToast('No hay URLs de descarga disponibles', 'info');
+                      return;
+                    }
+                    const success = await copyToClipboard(urls.join('\n'));
+                    showToast(
+                      success ? `${urls.length} URL(s) copiadas al portapapeles` : 'No se pudo copiar',
+                      success ? 'success' : 'error',
+                    );
+                  }}
+                  className="ml-auto flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-gray-400 transition-colors hover:border-violet-500/30 hover:text-white"
+                  aria-label="Copiar todas las URLs de descarga"
+                >
+                  <ClipboardList className="h-3 w-3" />
+                  Copiar URLs
+                </button>
               </div>
             </GlassCard>
 
@@ -361,7 +388,7 @@ function AttrCell({
           {value || '—'}
         </p>
         {copy && value && (
-          <button onClick={() => copy(value)} className="shrink-0 text-gray-500 hover:text-white">
+          <button onClick={() => copy(value)} aria-label={`Copiar ${label}`} className="shrink-0 text-gray-500 hover:text-white">
             <Copy className="h-2.5 w-2.5" />
           </button>
         )}

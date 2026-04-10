@@ -153,7 +153,7 @@ export default function CheckPage() {
                       placeholder="0d5cc74421f2e8a"
                       className={cn(
                         'w-full rounded-xl border bg-white/[0.03] px-4 py-2.5 font-mono text-sm text-white',
-                        'placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40',
+                        'placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40',
                         errors.guid ? 'border-red-500/40' : 'border-white/10',
                       )}
                     />
@@ -170,7 +170,7 @@ export default function CheckPage() {
                     <input
                       {...register('serial')}
                       placeholder="ZY32LNRW97"
-                      className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 font-mono text-sm text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                      className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 font-mono text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     />
                   </div>
                 </div>
@@ -595,7 +595,7 @@ function Attr({
           {value || '—'}
         </p>
         {copy && value && (
-          <button onClick={() => copy(value)} className="shrink-0 text-gray-500 hover:text-white">
+          <button onClick={() => copy(value)} aria-label={`Copiar ${label}`} className="shrink-0 text-gray-500 hover:text-white">
             <Copy className="h-2.5 w-2.5" />
           </button>
         )}

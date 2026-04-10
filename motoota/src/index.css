@@ -8,6 +8,7 @@
   --border-subtle: rgba(255, 255, 255, 0.05);
   --text-primary: #ffffff;
   --text-secondary: #9ca3af;
+  --text-placeholder: #6b7280;
   --accent-blue: #3b82f6;
   --accent-indigo: #6366f1;
 }
@@ -61,6 +62,13 @@ body {
   outline-offset: 2px;
 }
 
+/* ── Placeholder contrast fix (WCAG AA) ────────────────────── */
+
+::placeholder {
+  color: var(--text-placeholder);
+  opacity: 1;
+}
+
 /* ── Input autofill ────────────────────────────────────────── */
 
 input:-webkit-autofill,
@@ -78,6 +86,12 @@ select option {
   color: #ffffff;
 }
 
+/* ── Table row transitions ─────────────────────────────────── */
+
+tbody tr {
+  transition: background-color 0.15s ease;
+}
+
 /* ── Animations ────────────────────────────────────────────── */
 
 @keyframes pulse-glow {
@@ -90,12 +104,32 @@ select option {
   50% { transform: translateY(-10px); }
 }
 
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .animate-pulse-glow {
   animation: pulse-glow 3s ease-in-out infinite;
 }
 
 .animate-float {
   animation: float 6s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.05) 50%, transparent 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out both;
 }
 
 /* ── Gradient text ─────────────────────────────────────────── */
@@ -105,6 +139,32 @@ select option {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+/* ── Gradient border for active cards ──────────────────────── */
+
+.gradient-border {
+  position: relative;
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(99, 102, 241, 0.3), rgba(167, 139, 250, 0.3));
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.gradient-border:hover::before,
+.gradient-border:focus-within::before {
+  opacity: 1;
 }
 
 /* ── Starfield Background ──────────────────────────────────── */

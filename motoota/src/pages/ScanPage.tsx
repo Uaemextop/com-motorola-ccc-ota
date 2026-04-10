@@ -25,6 +25,7 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  FileDown,
 } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
 import Spinner from '@/components/ui/Spinner';
@@ -34,7 +35,7 @@ import { showToast } from '@/components/ui/Toast';
 import { useCarrierScan } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
 import { CARRIERS, getUniqueRegions } from '@/lib/api/carriers';
-import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename, copyToClipboard } from '@/lib/utils';
+import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename, copyToClipboard, exportScanResultsToCsv } from '@/lib/utils';
 import type { CarrierStatus, ScanResult, CheckResponse } from '@/lib/types';
 
 const schema = z.object({
@@ -206,7 +207,7 @@ export default function ScanPage() {
               placeholder="ej: 0d5cc74421f2e8a"
               className={cn(
                 'w-full rounded-xl border bg-white/[0.03] px-4 py-3 text-sm text-white',
-                'placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-emerald-500/40',
+                'placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/40',
                 errors.guid ? 'border-red-500/40' : 'border-white/10',
               )}
             />
@@ -355,7 +356,7 @@ export default function ScanPage() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Buscar carrier..."
-                  className="w-full rounded-lg border border-white/10 bg-white/[0.03] py-1.5 pl-9 pr-3 text-xs text-white placeholder:text-gray-600 focus:outline-none"
+                  className="w-full rounded-lg border border-white/10 bg-white/[0.03] py-1.5 pl-9 pr-3 text-xs text-white placeholder:text-gray-500 focus:outline-none"
                 />
               </div>
             </div>
@@ -422,7 +423,7 @@ export default function ScanPage() {
                   </tbody>
                 </table>
               </div>
-              <div className="border-t border-white/5 px-4 py-2.5 text-xs text-gray-500">
+              <div className="flex items-center justify-between border-t border-white/5 px-4 py-2.5 text-xs text-gray-500">
                 <span>
                   Escaneados {scanResults.length} carriers:{' '}
                   <span className="font-semibold text-emerald-400">{statusCounts.open} abiertos</span>,{' '}
@@ -433,6 +434,17 @@ export default function ScanPage() {
                   )}
                   {' '}· Mostrando {filteredResults.length}
                 </span>
+                <button
+                  onClick={() => {
+                    exportScanResultsToCsv(scanResults, config.guid);
+                    showToast('CSV exportado correctamente', 'success');
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-gray-400 transition-colors hover:border-white/20 hover:text-white"
+                  aria-label="Exportar resultados a CSV"
+                >
+                  <FileDown className="h-3 w-3" />
+                  Exportar CSV
+                </button>
               </div>
             </GlassCard>
 
@@ -695,7 +707,7 @@ function CellAttr({
           {value || '—'}
         </p>
         {copy && value && (
-          <button onClick={() => copy(value)} className="shrink-0 text-gray-500 hover:text-white">
+          <button onClick={() => copy(value)} aria-label={`Copiar ${label}`} className="shrink-0 text-gray-500 hover:text-white">
             <Copy className="h-2.5 w-2.5" />
           </button>
         )}
