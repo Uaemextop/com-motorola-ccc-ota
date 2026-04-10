@@ -1,6 +1,6 @@
 /* ── Scan Page ──────────────────────────────────────────────── */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, memo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -336,7 +336,7 @@ export default function ScanPage() {
             )}
 
             {/* Filters */}
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
               <div className="flex items-center gap-2 text-sm text-gray-400">
                 <Filter className="h-4 w-4" />
                 <span>Filtros:</span>
@@ -345,7 +345,7 @@ export default function ScanPage() {
                 value={regionFilter}
                 onChange={(e) => setRegionFilter(e.target.value)}
                 aria-label="Filtrar por región"
-                className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 sm:w-auto sm:py-1.5"
               >
                 <option value="all">Todas las regiones</option>
                 {regions.map((r) => (
@@ -359,7 +359,7 @@ export default function ScanPage() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Buscar carrier..."
                   aria-label="Buscar carrier en resultados"
-                  className="w-full rounded-lg border border-white/10 bg-white/[0.03] py-1.5 pl-9 pr-3 text-xs text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  className="w-full rounded-lg border border-white/10 bg-white/[0.03] py-2 pl-9 pr-3 text-xs text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 sm:py-1.5"
                 />
               </div>
             </div>
@@ -372,81 +372,49 @@ export default function ScanPage() {
                     <tr className="text-left text-xs uppercase tracking-wider text-gray-500">
                       <th className="px-4 py-3"><button onClick={() => toggleSort('carrier')} className="flex items-center gap-1 hover:text-gray-300"><span>Carrier</span><SortIcon field="carrier" /></button></th>
                       <th className="px-4 py-3"><button onClick={() => toggleSort('name')} className="flex items-center gap-1 hover:text-gray-300"><span>Nombre</span><SortIcon field="name" /></button></th>
-                      <th className="px-4 py-3"><button onClick={() => toggleSort('region')} className="flex items-center gap-1 hover:text-gray-300"><span>Región</span><SortIcon field="region" /></button></th>
+                      <th className="hidden px-4 py-3 sm:table-cell"><button onClick={() => toggleSort('region')} className="flex items-center gap-1 hover:text-gray-300"><span>Región</span><SortIcon field="region" /></button></th>
                       <th className="px-4 py-3"><button onClick={() => toggleSort('status')} className="flex items-center gap-1 hover:text-gray-300"><span>Estado</span><SortIcon field="status" /></button></th>
-                      <th className="px-4 py-3"><button onClick={() => toggleSort('version')} className="flex items-center gap-1 hover:text-gray-300"><span>Versión OTA</span><SortIcon field="version" /></button></th>
-                      <th className="px-4 py-3"><button onClick={() => toggleSort('chain')} className="flex items-center gap-1 hover:text-gray-300"><span>Cadena</span><SortIcon field="chain" /></button></th>
-                      <th className="px-4 py-3 text-right"><button onClick={() => toggleSort('size')} className="ml-auto flex items-center gap-1 hover:text-gray-300"><span>Tamaño</span><SortIcon field="size" /></button></th>
+                      <th className="hidden px-4 py-3 sm:table-cell"><button onClick={() => toggleSort('version')} className="flex items-center gap-1 hover:text-gray-300"><span>Versión</span><SortIcon field="version" /></button></th>
+                      <th className="hidden px-4 py-3 md:table-cell"><button onClick={() => toggleSort('chain')} className="flex items-center gap-1 hover:text-gray-300"><span>Cadena</span><SortIcon field="chain" /></button></th>
+                      <th className="hidden px-4 py-3 text-right md:table-cell"><button onClick={() => toggleSort('size')} className="ml-auto flex items-center gap-1 hover:text-gray-300"><span>Tamaño</span><SortIcon field="size" /></button></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {filteredResults.map((result, i) => (
-                      <motion.tr
+                    {filteredResults.map((result) => (
+                      <ScanResultRow
                         key={result.carrier.code}
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: Math.min(i * 0.01, 0.5) }}
-                        onClick={() => {
-                          if (result.status === 'open' || result.status === 'whitelisted') {
-                            setSelectedCarrier(selectedCarrier === result.carrier.code ? null : result.carrier.code);
-                            setSelectedStep(null);
-                          }
+                        result={result}
+                        isSelected={selectedCarrier === result.carrier.code}
+                        onSelect={(code) => {
+                          setSelectedCarrier(selectedCarrier === code ? null : code);
+                          setSelectedStep(null);
                         }}
-                        className={cn(
-                          'text-gray-300 transition-colors',
-                          (result.status === 'open' || result.status === 'whitelisted')
-                            ? 'cursor-pointer hover:bg-white/[0.04]'
-                            : 'hover:bg-white/[0.02]',
-                          selectedCarrier === result.carrier.code && 'bg-violet-500/[0.06]',
-                        )}
-                      >
-                        <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-white">
-                          {result.carrier.code}
-                        </td>
-                        <td className="px-4 py-2.5 text-xs">{result.carrier.name}</td>
-                        <td className="px-4 py-2.5 text-xs text-gray-500">{result.carrier.region}</td>
-                        <td className="px-4 py-2.5">
-                          <StatusBadge status={result.status} />
-                        </td>
-                        <td className="px-4 py-2.5 font-mono text-xs">
-                          {result.response?.content?.targetVersion || '—'}
-                        </td>
-                        <td className="px-4 py-2.5 text-xs text-gray-500">
-                          {result.chain && result.chain.length > 0
-                            ? `${result.chain.length} paso${result.chain.length > 1 ? 's' : ''}`
-                            : '—'}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-mono text-xs text-gray-500">
-                          {result.response?.content?.sizeMB
-                            ? `${result.response.content.sizeMB} MB`
-                            : '—'}
-                        </td>
-                      </motion.tr>
+                      />
                     ))}
                   </tbody>
                 </table>
               </div>
-              <div className="flex items-center justify-between border-t border-white/5 px-4 py-2.5 text-xs text-gray-500">
+              <div className="flex flex-col gap-2 border-t border-white/5 px-4 py-2.5 text-xs text-gray-500 sm:flex-row sm:items-center sm:justify-between">
                 <span>
-                  Escaneados {scanResults.length} carriers:{' '}
+                  {scanResults.length} carriers:{' '}
                   <span className="font-semibold text-emerald-400">{statusCounts.open} abiertos</span>,{' '}
-                  <span className="font-semibold text-amber-400">{statusCounts.whitelisted} whitelisted</span>,{' '}
-                  {statusCounts['no-content']} sin contenido
+                  <span className="font-semibold text-amber-400">{statusCounts.whitelisted} wl</span>,{' '}
+                  {statusCounts['no-content']} s/c
                   {statusCounts.error > 0 && (
-                    <>, <span className="text-red-400">{statusCounts.error} errores</span></>
+                    <>, <span className="text-red-400">{statusCounts.error} err</span></>
                   )}
-                  {' '}· Mostrando {filteredResults.length}
+                  {' '}· {filteredResults.length} mostrados
                 </span>
                 <button
                   onClick={() => {
                     exportScanResultsToCsv(scanResults, config.guid);
                     showToast('CSV exportado correctamente', 'success');
                   }}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-gray-400 transition-colors hover:border-white/20 hover:text-white"
+                  className="flex items-center gap-1.5 self-start rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-gray-400 transition-colors hover:border-white/20 hover:text-white sm:self-auto"
                   aria-label="Exportar resultados a CSV"
                 >
                   <FileDown className="h-3 w-3" />
-                  Exportar CSV
+                  CSV
                 </button>
               </div>
             </GlassCard>
@@ -570,6 +538,51 @@ export default function ScanPage() {
     </div>
   );
 }
+
+/* ── Memoized scan result table row ────────────────────────── */
+const ScanResultRow = memo(function ScanResultRow({
+  result,
+  isSelected,
+  onSelect,
+}: {
+  result: ScanResult;
+  isSelected: boolean;
+  onSelect: (code: string) => void;
+}) {
+  const clickable = result.status === 'open' || result.status === 'whitelisted';
+  return (
+    <tr
+      onClick={() => { if (clickable) onSelect(result.carrier.code); }}
+      className={cn(
+        'text-gray-300 transition-colors',
+        clickable ? 'cursor-pointer hover:bg-white/[0.04]' : 'hover:bg-white/[0.02]',
+        isSelected && 'bg-violet-500/[0.06]',
+      )}
+    >
+      <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-white">
+        {result.carrier.code}
+      </td>
+      <td className="px-4 py-2.5 text-xs">{result.carrier.name}</td>
+      <td className="hidden px-4 py-2.5 text-xs text-gray-500 sm:table-cell">{result.carrier.region}</td>
+      <td className="px-4 py-2.5">
+        <StatusBadge status={result.status} />
+      </td>
+      <td className="hidden px-4 py-2.5 font-mono text-xs sm:table-cell">
+        {result.response?.content?.targetVersion || '—'}
+      </td>
+      <td className="hidden px-4 py-2.5 text-xs text-gray-500 md:table-cell">
+        {result.chain && result.chain.length > 0
+          ? `${result.chain.length} paso${result.chain.length > 1 ? 's' : ''}`
+          : '—'}
+      </td>
+      <td className="hidden px-4 py-2.5 text-right font-mono text-xs text-gray-500 md:table-cell">
+        {result.response?.content?.sizeMB
+          ? `${result.response.content.sizeMB} MB`
+          : '—'}
+      </td>
+    </tr>
+  );
+});
 
 /* ── Step detail component ─────────────────────────────────── */
 function StepDetail({

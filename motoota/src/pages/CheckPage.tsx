@@ -256,18 +256,18 @@ export default function CheckPage() {
             animate={{ opacity: 1, y: 0 }}
           >
             <GlassCard className="p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 text-sm text-gray-400">
-                  <Search className="h-4 w-4 text-blue-400" />
-                  <span className="font-mono text-white">{config.guid}</span>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-gray-400">
+                  <Search className="h-4 w-4 shrink-0 text-blue-400" />
+                  <span className="truncate font-mono text-white">{config.guid}</span>
                   <span className="text-gray-600">·</span>
                   <span className="text-white">{config.carrier}</span>
-                  <span className="text-gray-600">·</span>
-                  <span className="text-gray-500">{server?.name}</span>
+                  <span className="hidden text-gray-600 sm:inline">·</span>
+                  <span className="hidden text-gray-500 sm:inline">{server?.name}</span>
                 </div>
                 <button
                   onClick={resetSearch}
-                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-gray-400 transition-colors hover:border-white/20 hover:text-white"
+                  className="flex items-center gap-1.5 self-start rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-gray-400 transition-colors hover:border-white/20 hover:text-white sm:self-auto"
                 >
                   <RotateCcw className="h-3 w-3" />
                   Modificar

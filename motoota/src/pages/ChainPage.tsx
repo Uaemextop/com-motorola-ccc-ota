@@ -137,22 +137,24 @@ export default function ChainPage() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
             {/* Chain summary */}
             <GlassCard className="p-4">
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-                <span className="text-gray-400">
-                  <span className="font-semibold text-white">{chain.length}</span> paso{chain.length > 1 ? 's' : ''}
-                </span>
-                <span className="text-gray-600">·</span>
-                <span className="text-gray-400">
-                  Base: <span className="font-mono text-white">{chain[0]?.content?.sourceVersion}</span>
-                </span>
-                <span className="text-violet-400">→</span>
-                <span className="text-gray-400">
-                  Última: <span className="font-mono font-semibold text-emerald-400">{chain[chain.length - 1]?.content?.targetVersion}</span>
-                </span>
-                <span className="text-gray-600">·</span>
-                <span className="font-semibold text-white">
-                  {(chain.reduce((acc, s) => acc + (s.content?.sizeBytes || 0), 0) / (1024 * 1024)).toFixed(1)} MB total
-                </span>
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-2">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                  <span className="text-gray-400">
+                    <span className="font-semibold text-white">{chain.length}</span> paso{chain.length > 1 ? 's' : ''}
+                  </span>
+                  <span className="hidden text-gray-600 sm:inline">·</span>
+                  <span className="text-gray-400">
+                    Base: <span className="font-mono text-white">{chain[0]?.content?.sourceVersion}</span>
+                  </span>
+                  <span className="text-violet-400">→</span>
+                  <span className="text-gray-400">
+                    Última: <span className="font-mono font-semibold text-emerald-400">{chain[chain.length - 1]?.content?.targetVersion}</span>
+                  </span>
+                  <span className="hidden text-gray-600 sm:inline">·</span>
+                  <span className="font-semibold text-white">
+                    {(chain.reduce((acc, s) => acc + (s.content?.sizeBytes || 0), 0) / (1024 * 1024)).toFixed(1)} MB total
+                  </span>
+                </div>
                 <button
                   onClick={async () => {
                     const networkTag = config.downloadNetwork === 'wifi' ? 'WIFI' : 'CELL';
@@ -173,7 +175,7 @@ export default function ChainPage() {
                       success ? 'success' : 'error',
                     );
                   }}
-                  className="ml-auto flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-gray-400 transition-colors hover:border-violet-500/30 hover:text-white"
+                  className="flex items-center gap-1.5 self-start rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-gray-400 transition-colors hover:border-violet-500/30 hover:text-white sm:ml-auto sm:self-auto"
                   aria-label="Copiar todas las URLs de descarga"
                 >
                   <ClipboardList className="h-3 w-3" />

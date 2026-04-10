@@ -100,10 +100,10 @@ export default function HomePage() {
           <Zap className="h-4 w-4" />
           Motorola CDS API Client
         </div>
-        <h1 className="bg-gradient-to-r from-white via-blue-100 to-blue-400 bg-clip-text text-4xl font-bold tracking-tight text-transparent sm:text-5xl lg:text-6xl">
+        <h1 className="bg-gradient-to-r from-white via-blue-100 to-blue-400 bg-clip-text text-3xl font-bold tracking-tight text-transparent sm:text-4xl md:text-5xl lg:text-6xl">
           MotoOTA
         </h1>
-        <p className="mx-auto mt-4 max-w-2xl text-lg text-gray-400">
+        <p className="mx-auto mt-4 max-w-2xl text-base text-gray-400 sm:text-lg">
           Verifica, explora y descarga actualizaciones OTA de Motorola directamente
           desde los servidores CDS oficiales.
         </p>

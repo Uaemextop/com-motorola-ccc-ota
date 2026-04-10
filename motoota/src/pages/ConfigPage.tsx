@@ -168,7 +168,7 @@ export default function ConfigPage() {
           </FieldGroup>
 
           {/* Actions */}
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-col gap-3 pt-2 sm:flex-row">
             <button
               type="submit"
               className={cn(
@@ -186,7 +186,7 @@ export default function ConfigPage() {
             <button
               type="button"
               onClick={onReset}
-              className="flex items-center gap-2 rounded-xl border border-white/10 px-6 py-3 text-sm font-medium text-gray-400 transition-colors hover:bg-white/5 hover:text-white"
+              className="flex items-center justify-center gap-2 rounded-xl border border-white/10 px-6 py-3 text-sm font-medium text-gray-400 transition-colors hover:bg-white/5 hover:text-white"
             >
               <RotateCcw className="h-4 w-4" />
               Restablecer

@@ -204,6 +204,9 @@ tbody tr {
   inset: 0;
   background-repeat: repeat;
   animation: drift linear infinite;
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 .stars-sm {
@@ -241,6 +244,75 @@ tbody tr {
 }
 
 @keyframes drift {
-  from { transform: translate(0, 0); }
-  to   { transform: translate(-200px, -150px); }
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-200px, -150px, 0); }
+}
+
+/* ── Reduced Motion ────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .stars-sm,
+  .stars-md,
+  .stars-lg {
+    animation: none;
+  }
+
+  .animate-pulse-glow {
+    animation: none;
+  }
+
+  .animate-float {
+    animation: none;
+  }
+
+  .animate-shimmer {
+    animation: none;
+  }
+
+  .animate-fade-in {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* ── Mobile Optimizations ──────────────────────────────────── */
+
+@media (max-width: 640px) {
+  /* Larger touch targets on mobile */
+  button,
+  a,
+  [role="option"],
+  [role="listbox"] button {
+    min-height: 44px;
+  }
+
+  /* Prevent horizontal overflow on mobile */
+  pre,
+  code {
+    word-break: break-all;
+    overflow-wrap: break-word;
+  }
+
+  /* Full-width cards on mobile */
+  .glass-card-mobile {
+    border-radius: 1rem;
+  }
+}
+
+/* Ensure smooth scrolling on iOS */
+@supports (-webkit-touch-callout: none) {
+  .overflow-auto,
+  .overflow-y-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Hide scrollbar utility */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
