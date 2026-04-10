@@ -10,10 +10,11 @@ export function cn(...inputs: ClassValue[]) {
 
 /** Format bytes to human-readable string */
 export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
   if (bytes === 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
 }
 
@@ -45,8 +46,34 @@ export function buildDownloadFilename(
 
 /** Download a cross-origin file by opening it in a new tab */
 export function downloadFile(url: string, _filename: string): Promise<void> {
+  if (!/^https?:\/\//i.test(url)) {
+    return Promise.reject(new Error('Invalid URL scheme — only HTTP/HTTPS allowed'));
+  }
   window.open(url, '_blank', 'noopener,noreferrer');
   return Promise.resolve();
+}
+
+/** Copy text to clipboard with fallback for older browsers */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    // Legacy fallback for browsers without Clipboard API (deprecated but intentional)
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const success = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return success;
+  } catch {
+    return false;
+  }
 }
 
 /* ── Sanitize release notes HTML ─────────────────────────────── */
@@ -60,6 +87,7 @@ const ALLOWED_ATTRS: Record<string, Set<string>> = {
 
 /** Recursively strip disallowed HTML tags, keeping only safe content. */
 export function sanitizeReleaseNotes(html: string): string {
+  if (!html || typeof html !== 'string') return '';
   const doc = new DOMParser().parseFromString(html, 'text/html');
   function walk(node: Node): string {
     if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
@@ -92,4 +120,55 @@ export function sanitizeReleaseNotes(html: string): string {
   let result = '';
   doc.body.childNodes.forEach((c) => { result += walk(c); });
   return result;
+}
+
+/* ── CSV Export ───────────────────────────────────────────────── */
+
+/** Export scan results to CSV and trigger download */
+export function exportScanResultsToCsv(
+  results: Array<{
+    carrier: { code: string; name: string; region: string };
+    status: string;
+    response: { content?: { targetVersion?: string; sizeBytes?: number; updateType?: string; model?: string; md5?: string } | null } | null;
+    chain?: Array<{ content?: { targetVersion?: string } | null }>;
+    error: string | null;
+  }>,
+  guid: string,
+): void {
+  const header = 'Carrier,Name,Region,Status,Target Version,Size (MB),Update Type,Model,MD5,Chain Steps,Error';
+  const rows = results.map((r) => {
+    const c = r.response?.content;
+    return [
+      r.carrier.code,
+      `"${r.carrier.name.replace(/"/g, '""')}"`,
+      r.carrier.region,
+      r.status,
+      c?.targetVersion || '',
+      c?.sizeBytes ? (c.sizeBytes / (1024 * 1024)).toFixed(2) : '',
+      c?.updateType || '',
+      c?.model || '',
+      c?.md5 || '',
+      r.chain?.length || 0,
+      r.error ? `"${r.error.replace(/"/g, '""')}"` : '',
+    ].join(',');
+  });
+
+  const csv = [header, ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `motoota-scan-${guid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20)}-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+/** Format a duration in seconds to a human-readable string */
+export function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
 }

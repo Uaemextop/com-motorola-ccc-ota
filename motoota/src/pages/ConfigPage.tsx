@@ -49,9 +49,13 @@ export default function ConfigPage() {
   });
 
   const onSubmit = (data: FormData) => {
-    updateConfig(data);
-    showToast('Configuración guardada', 'success');
-    reset(data);
+    try {
+      updateConfig(data);
+      showToast('Configuración guardada', 'success');
+      reset(data);
+    } catch {
+      showToast('Error al guardar la configuración', 'error');
+    }
   };
 
   const onReset = () => {
@@ -88,7 +92,7 @@ export default function ConfigPage() {
             <input
               {...register('guid')}
               placeholder="ej: 0d5cc74421f2e8a"
-              className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+              className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
           </FieldGroup>
 
@@ -111,7 +115,7 @@ export default function ConfigPage() {
             <input
               {...register('serial')}
               placeholder="ej: ZY32LNRW97"
-              className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 font-mono text-sm text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+              className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 font-mono text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
             />
           </FieldGroup>
 

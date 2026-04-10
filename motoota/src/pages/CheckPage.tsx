@@ -13,8 +13,6 @@ import {
   Download,
   Copy,
   ChevronDown,
-  ExternalLink,
-  FileText,
   Smartphone,
   Hash,
   Radio,
@@ -26,12 +24,16 @@ import GlassCard from '@/components/ui/GlassCard';
 import Spinner from '@/components/ui/Spinner';
 import StatusBadge from '@/components/ui/StatusBadge';
 import CarrierSelect from '@/components/ui/CarrierSelect';
+import AttrCell from '@/components/ui/AttrCell';
+import DownloadButton from '@/components/ui/DownloadButton';
+import ResourceUrlList from '@/components/ui/ResourceUrlList';
+import ReleaseNotes from '@/components/ui/ReleaseNotes';
 import { showToast } from '@/components/ui/Toast';
 import { useOtaCheck } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
 import { classifyCarrierStatus } from '@/lib/api/response';
 import { getServerById } from '@/lib/api/servers';
-import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename, downloadFile } from '@/lib/utils';
+import { formatBytes, cn, buildDownloadFilename, copyToClipboard } from '@/lib/utils';
 import { DEFAULT_HEADERS, buildCheckURL, buildPayload } from '@/lib/api/endpoints';
 import { getLastRequestLog } from '@/lib/api/client';
 
@@ -50,7 +52,6 @@ export default function CheckPage() {
   const { check, checking } = useOtaCheck();
   const [showRaw, setShowRaw] = useState(false);
   const [showRequest, setShowRequest] = useState(false);
-  const [showReleaseNotes, setShowReleaseNotes] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [requestLog, setRequestLog] = useState<ReturnType<typeof getLastRequestLog>>(null);
   const [formCollapsed, setFormCollapsed] = useState(false);
@@ -107,16 +108,11 @@ export default function CheckPage() {
     setRequestLog(null);
     setShowRaw(false);
     setShowDebug(false);
-    setShowReleaseNotes(false);
   };
 
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      showToast('Copiado al portapapeles', 'success');
-    } catch {
-      showToast('No se pudo copiar al portapapeles', 'error');
-    }
+  const handleCopy = async (text: string) => {
+    const success = await copyToClipboard(text);
+    showToast(success ? 'Copiado al portapapeles' : 'No se pudo copiar al portapapeles', success ? 'success' : 'error');
   };
 
   const server = getServerById(config.server);
@@ -157,7 +153,7 @@ export default function CheckPage() {
                       placeholder="0d5cc74421f2e8a"
                       className={cn(
                         'w-full rounded-xl border bg-white/[0.03] px-4 py-2.5 font-mono text-sm text-white',
-                        'placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40',
+                        'placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40',
                         errors.guid ? 'border-red-500/40' : 'border-white/10',
                       )}
                     />
@@ -174,7 +170,7 @@ export default function CheckPage() {
                     <input
                       {...register('serial')}
                       placeholder="ZY32LNRW97"
-                      className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 font-mono text-sm text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                      className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 font-mono text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     />
                   </div>
                 </div>
@@ -219,6 +215,7 @@ export default function CheckPage() {
               {/* Request preview toggle */}
               <button
                 onClick={() => setShowRequest(!showRequest)}
+                aria-expanded={showRequest}
                 className="mt-3 flex items-center gap-1.5 text-xs text-gray-500 transition-colors hover:text-gray-300"
               >
                 <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showRequest && 'rotate-180')} />
@@ -364,25 +361,17 @@ export default function CheckPage() {
 
                   {/* Grid de atributos */}
                   <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-                    <Attr label="Tamaño" value={formatBytes(lastCheck.content.sizeBytes)} />
-                    <Attr label="Tipo" value={lastCheck.content.updateType} />
-                    <Attr label="Modelo" value={lastCheck.content.model} />
-                    <Attr label="Fase" value={lastCheck.content.deploymentPhase} />
-                    <Attr label="GUID destino" value={lastCheck.content.targetGuid} mono copy={copyToClipboard} />
-                    <Attr label="MD5" value={lastCheck.content.md5} mono copy={copyToClipboard} />
+                    <AttrCell label="Tamaño" value={formatBytes(lastCheck.content.sizeBytes)} />
+                    <AttrCell label="Tipo" value={lastCheck.content.updateType} />
+                    <AttrCell label="Modelo" value={lastCheck.content.model} />
+                    <AttrCell label="Fase" value={lastCheck.content.deploymentPhase} />
+                    <AttrCell label="GUID destino" value={lastCheck.content.targetGuid} mono copy={handleCopy} />
+                    <AttrCell label="MD5" value={lastCheck.content.md5} mono copy={handleCopy} />
                   </div>
 
                   {/* Package ID (full width) */}
                   {lastCheck.content.packageId && (
-                    <div className="rounded-lg bg-white/[0.02] px-3 py-2">
-                      <p className="text-[9px] uppercase tracking-wider text-gray-500">Package ID</p>
-                      <div className="mt-0.5 flex items-center gap-1.5">
-                        <p className="flex-1 truncate font-mono text-[11px] text-gray-300">{lastCheck.content.packageId}</p>
-                        <button onClick={() => copyToClipboard(lastCheck.content!.packageId)} className="text-gray-500 hover:text-white">
-                          <Copy className="h-3 w-3" />
-                        </button>
-                      </div>
-                    </div>
+                    <AttrCell label="Package ID" value={lastCheck.content.packageId} mono copy={handleCopy} />
                   )}
                 </div>
               )}
@@ -403,46 +392,16 @@ export default function CheckPage() {
                   Descargas ({filtered.length})
                 </h4>
                 {primaryUrl && dlName && (
-                  <button
-                    onClick={() => downloadFile(primaryUrl, dlName).catch(() => showToast('Error al descargar', 'error'))}
-                    className={cn(
-                      'mb-3 flex w-full items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-sm font-semibold',
-                      'bg-gradient-to-r from-emerald-600 to-green-600 text-white',
-                      'shadow-lg shadow-emerald-500/20 transition-all',
-                      'hover:shadow-emerald-500/30 hover:brightness-110',
-                    )}
-                  >
-                    <Download className="h-4 w-4" />
-                    Descargar OTA ({lastCheck.content?.sizeMB} MB)
-                  </button>
+                  <div className="mb-3">
+                    <DownloadButton
+                      url={primaryUrl}
+                      filename={dlName}
+                      sizeMB={lastCheck.content?.sizeMB}
+                      onError={() => showToast('Error al descargar', 'error')}
+                    />
+                  </div>
                 )}
-                <div className="space-y-1.5">
-                  {filtered.map((resource, i) => (
-                    <div key={i} className="flex items-center gap-2 rounded-lg bg-white/[0.02] px-3 py-2 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        {resource.tags.map((tag) => (
-                          <span key={tag} className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-medium text-blue-400">
-                            {tag}
-                          </span>
-                        ))}
-                        {resource.urlTtlSeconds > 0 && (
-                          <span className="flex items-center gap-0.5 text-[10px] text-gray-600">
-                            <Clock className="h-2.5 w-2.5" /> {resource.urlTtlSeconds}s
-                          </span>
-                        )}
-                      </div>
-                      <a href={resource.url} download={dlName} className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
-                        {resource.url}
-                      </a>
-                      <button onClick={() => copyToClipboard(resource.url)} className="shrink-0 text-gray-500 hover:text-white">
-                        <Copy className="h-3 w-3" />
-                      </button>
-                      <a href={resource.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-gray-500 hover:text-white">
-                        <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
-                  ))}
-                </div>
+                <ResourceUrlList resources={filtered} onCopy={handleCopy} />
               </GlassCard>
               );
             })()}
@@ -450,28 +409,7 @@ export default function CheckPage() {
             {/* Release notes */}
             {lastCheck.hasUpdate && lastCheck.content?.releaseNotes && (
               <GlassCard className="p-5">
-                <button onClick={() => setShowReleaseNotes(!showReleaseNotes)} className="flex w-full items-center justify-between">
-                  <h4 className="flex items-center gap-2 text-sm font-semibold text-gray-300">
-                    <FileText className="h-4 w-4 text-violet-400" />
-                    Notas de la versión
-                  </h4>
-                  <ChevronDown className={cn('h-4 w-4 text-gray-500 transition-transform', showReleaseNotes && 'rotate-180')} />
-                </button>
-                <AnimatePresence>
-                  {showReleaseNotes && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      className="mt-3 overflow-hidden rounded-lg border border-white/5 bg-black/20 p-4"
-                    >
-                      <div
-                        className="prose prose-sm prose-invert max-w-none [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-violet-300 [&_p]:text-gray-300 [&_p]:leading-relaxed"
-                        dangerouslySetInnerHTML={{ __html: sanitizeReleaseNotes(lastCheck.content.releaseNotes) }}
-                      />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                <ReleaseNotes html={lastCheck.content.releaseNotes} />
               </GlassCard>
             )}
 
@@ -490,6 +428,7 @@ export default function CheckPage() {
                 <>
                   <button
                     onClick={() => setShowDebug(!showDebug)}
+                    aria-expanded={showDebug}
                     className="flex items-center gap-1.5 text-xs text-gray-500 transition-colors hover:text-gray-300"
                   >
                     <ChevronDown className={cn('h-3 w-3 transition-transform', showDebug && 'rotate-180')} />
@@ -541,6 +480,7 @@ export default function CheckPage() {
               {/* Raw JSON toggle */}
               <button
                 onClick={() => setShowRaw(!showRaw)}
+                aria-expanded={showRaw}
                 className="flex items-center gap-1.5 text-xs text-gray-500 transition-colors hover:text-gray-300"
               >
                 <ChevronDown className={cn('h-3 w-3 transition-transform', showRaw && 'rotate-180')} />
@@ -575,35 +515,6 @@ export default function CheckPage() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
-  );
-}
-
-/* ── Attr: compact attribute cell ─────────────────────────────── */
-function Attr({
-  label,
-  value,
-  mono,
-  copy,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  copy?: (v: string) => void;
-}) {
-  return (
-    <div className="rounded-lg bg-white/[0.02] px-3 py-2">
-      <p className="text-[9px] uppercase tracking-wider text-gray-500">{label}</p>
-      <div className="mt-0.5 flex items-center gap-1">
-        <p className={cn('flex-1 truncate text-gray-200', mono && 'font-mono text-[11px]')}>
-          {value || '—'}
-        </p>
-        {copy && value && (
-          <button onClick={() => copy(value)} className="shrink-0 text-gray-500 hover:text-white">
-            <Copy className="h-2.5 w-2.5" />
-          </button>
-        )}
-      </div>
     </div>
   );
 }
