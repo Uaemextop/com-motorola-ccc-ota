@@ -289,7 +289,6 @@ tbody tr {
   /* Prevent horizontal overflow on mobile */
   pre,
   code {
-    word-break: break-all;
     overflow-wrap: break-word;
   }
 

@@ -13,10 +13,20 @@ interface JsonViewerProps {
 
 /* Color‑code JSON tokens with inline <span>s.
    Fast string-based approach — no heavy library needed. */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function colorizeJson(json: string): string {
-  return json.replace(
-    /("(?:\\.|[^"\\])*")\s*(:)?|(\btrue\b|\bfalse\b)|(\bnull\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
-    (match, str: string | undefined, colon: string | undefined, bool: string | undefined, nil: string | undefined, num: string | undefined) => {
+  // First escape HTML entities to prevent XSS
+  const escaped = escapeHtml(json);
+  return escaped.replace(
+    /(&quot;(?:\\.|[^&])*?&quot;)\s*(:)?|(\btrue\b|\bfalse\b)|(\bnull\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
+    (match, str: string | undefined, colon: string | undefined, bool: string | undefined, nullVal: string | undefined, num: string | undefined) => {
       if (str) {
         if (colon) {
           // key
@@ -26,7 +36,7 @@ function colorizeJson(json: string): string {
         return `<span class="json-string">${str}</span>`;
       }
       if (bool) return `<span class="json-bool">${bool}</span>`;
-      if (nil) return `<span class="json-null">${nil}</span>`;
+      if (nullVal) return `<span class="json-null">${nullVal}</span>`;
       if (num) return `<span class="json-number">${num}</span>`;
       return match;
     },
