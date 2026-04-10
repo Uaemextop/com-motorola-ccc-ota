@@ -215,6 +215,7 @@ export default function CheckPage() {
               {/* Request preview toggle */}
               <button
                 onClick={() => setShowRequest(!showRequest)}
+                aria-expanded={showRequest}
                 className="mt-3 flex items-center gap-1.5 text-xs text-gray-500 transition-colors hover:text-gray-300"
               >
                 <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', showRequest && 'rotate-180')} />
@@ -446,7 +447,7 @@ export default function CheckPage() {
             {/* Release notes */}
             {lastCheck.hasUpdate && lastCheck.content?.releaseNotes && (
               <GlassCard className="p-5">
-                <button onClick={() => setShowReleaseNotes(!showReleaseNotes)} className="flex w-full items-center justify-between">
+                <button onClick={() => setShowReleaseNotes(!showReleaseNotes)} aria-expanded={showReleaseNotes} className="flex w-full items-center justify-between">
                   <h4 className="flex items-center gap-2 text-sm font-semibold text-gray-300">
                     <FileText className="h-4 w-4 text-violet-400" />
                     Notas de la versión
@@ -486,6 +487,7 @@ export default function CheckPage() {
                 <>
                   <button
                     onClick={() => setShowDebug(!showDebug)}
+                    aria-expanded={showDebug}
                     className="flex items-center gap-1.5 text-xs text-gray-500 transition-colors hover:text-gray-300"
                   >
                     <ChevronDown className={cn('h-3 w-3 transition-transform', showDebug && 'rotate-180')} />
@@ -537,6 +539,7 @@ export default function CheckPage() {
               {/* Raw JSON toggle */}
               <button
                 onClick={() => setShowRaw(!showRaw)}
+                aria-expanded={showRaw}
                 className="flex items-center gap-1.5 text-xs text-gray-500 transition-colors hover:text-gray-300"
               >
                 <ChevronDown className={cn('h-3 w-3 transition-transform', showRaw && 'rotate-180')} />

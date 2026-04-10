@@ -49,9 +49,13 @@ export default function ConfigPage() {
   });
 
   const onSubmit = (data: FormData) => {
-    updateConfig(data);
-    showToast('Configuración guardada', 'success');
-    reset(data);
+    try {
+      updateConfig(data);
+      showToast('Configuración guardada', 'success');
+      reset(data);
+    } catch {
+      showToast('Error al guardar la configuración', 'error');
+    }
   };
 
   const onReset = () => {

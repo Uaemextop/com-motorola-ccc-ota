@@ -15,6 +15,7 @@ import {
 import { useAppStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import type { Page } from '@/lib/types';
+import { version as APP_VERSION } from '../../../package.json';
 
 interface NavItem {
   id: Page;
@@ -82,7 +83,7 @@ export default function Sidebar() {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-1 px-3 py-4">
+        <nav className="flex-1 space-y-1 px-3 py-4" aria-label="Navegación principal">
           {NAV_ITEMS.map((item) => {
             const isActive = currentPage === item.id;
             const Icon = item.icon;
@@ -93,6 +94,7 @@ export default function Sidebar() {
                   setPage(item.id);
                   setSidebarOpen(false);
                 }}
+                aria-current={isActive ? 'page' : undefined}
                 className={cn(
                   'group relative flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
                   isActive
@@ -122,7 +124,7 @@ export default function Sidebar() {
                 com.motorola.ccc.ota
               </p>
               <p className="mt-0.5 flex items-center gap-1.5 text-[10px] text-gray-600">
-                <span className="rounded bg-blue-500/10 px-1.5 py-0.5 font-mono text-blue-400">v1.1.0</span>
+                <span className="rounded bg-blue-500/10 px-1.5 py-0.5 font-mono text-blue-400">v{APP_VERSION}</span>
               </p>
             </div>
             <a

@@ -116,12 +116,14 @@ export default function CarrierSelect({ value, onChange, error }: CarrierSelectP
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Buscar carrier..."
+                aria-label="Buscar carriers"
                 className="w-full bg-transparent py-1 pl-7 pr-7 text-sm text-white placeholder:text-gray-500 focus:outline-none"
               />
               {query && (
                 <button
                   type="button"
                   onClick={() => setQuery('')}
+                  aria-label="Limpiar búsqueda"
                   className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
                 >
                   <X className="h-3.5 w-3.5" />

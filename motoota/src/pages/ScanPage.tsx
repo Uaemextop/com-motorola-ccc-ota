@@ -343,7 +343,8 @@ export default function ScanPage() {
               <select
                 value={regionFilter}
                 onChange={(e) => setRegionFilter(e.target.value)}
-                className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white focus:outline-none"
+                aria-label="Filtrar por región"
+                className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
               >
                 <option value="all">Todas las regiones</option>
                 {regions.map((r) => (
@@ -356,7 +357,8 @@ export default function ScanPage() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Buscar carrier..."
-                  className="w-full rounded-lg border border-white/10 bg-white/[0.03] py-1.5 pl-9 pr-3 text-xs text-white placeholder:text-gray-500 focus:outline-none"
+                  aria-label="Buscar carrier en resultados"
+                  className="w-full rounded-lg border border-white/10 bg-white/[0.03] py-1.5 pl-9 pr-3 text-xs text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 />
               </div>
             </div>
@@ -472,6 +474,7 @@ export default function ScanPage() {
                       </div>
                       <button
                         onClick={() => { setSelectedCarrier(null); setSelectedStep(null); }}
+                        aria-label="Cerrar detalle del carrier"
                         className="rounded-lg p-1 text-gray-500 transition-colors hover:bg-white/5 hover:text-white"
                       >
                         <X className="h-4 w-4" />
@@ -509,7 +512,7 @@ export default function ScanPage() {
                         <div className="space-y-2">
                           {selectedResult.chain.map((step, i) => (
                             <button
-                              key={i}
+                              key={step.content?.targetGuid || `step-${i}`}
                               onClick={() => setSelectedStep(selectedStep === i ? null : i)}
                               className={cn(
                                 'flex w-full items-center gap-3 rounded-xl border p-3 text-left text-xs transition-all',
@@ -659,7 +662,7 @@ function StepDetail({
       {/* Release notes */}
       {step.content.releaseNotes && (
         <div>
-          <button onClick={() => setShowNotes(!showNotes)} className="flex w-full items-center justify-between text-xs">
+          <button onClick={() => setShowNotes(!showNotes)} aria-expanded={showNotes} className="flex w-full items-center justify-between text-xs">
             <span className="flex items-center gap-1.5 font-semibold text-gray-400">
               <FileText className="h-3.5 w-3.5 text-violet-400" />
               Notas de la versión
@@ -675,7 +678,7 @@ function StepDetail({
                 className="mt-2 overflow-hidden rounded-lg border border-white/5 bg-black/20 p-3"
               >
                 <div
-                  className="prose prose-sm prose-invert max-w-none [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-violet-300 [&_p]:text-xs [&_p]:text-gray-300 [&_p]:leading-relaxed"
+                  className="prose prose-sm prose-invert max-w-none [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-violet-300 [&_p]:text-sm [&_p]:text-gray-300 [&_p]:leading-relaxed"
                   dangerouslySetInnerHTML={{ __html: sanitizeReleaseNotes(step.content.releaseNotes) }}
                 />
               </motion.div>
@@ -701,7 +704,7 @@ function CellAttr({
 }) {
   return (
     <div className="rounded-lg bg-white/[0.02] px-2.5 py-1.5">
-      <p className="text-[8px] uppercase tracking-wider text-gray-500">{label}</p>
+      <p className="text-[10px] uppercase tracking-wider text-gray-500">{label}</p>
       <div className="mt-0.5 flex items-center gap-1">
         <p className={cn('flex-1 truncate text-gray-200', mono && 'font-mono text-[10px]')}>
           {value || '—'}

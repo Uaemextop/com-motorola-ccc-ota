@@ -158,7 +158,7 @@ export function exportScanResultsToCsv(
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `motoota-scan-${guid}-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = `motoota-scan-${guid.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20)}-${new Date().toISOString().slice(0, 10)}.csv`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);

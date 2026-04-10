@@ -63,10 +63,11 @@ const STATS = [
   { icon: Download, label: 'Descarga', value: 0, suffix: 'Directa', isNumber: false },
 ];
 
-/** Animated counter hook */
+/** Animated counter hook — skips animation when target is 0 (non-numeric stats) */
 function useCountUp(target: number, duration = 1200, enabled = true) {
   const [count, setCount] = useState(0);
   const startedRef = useRef(false);
+  const rafRef = useRef(0);
   useEffect(() => {
     if (!enabled || startedRef.current || target === 0) return;
     startedRef.current = true;
@@ -75,9 +76,10 @@ function useCountUp(target: number, duration = 1200, enabled = true) {
       const progress = Math.min((now - start) / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
       setCount(Math.round(target * eased));
-      if (progress < 1) requestAnimationFrame(tick);
+      if (progress < 1) rafRef.current = requestAnimationFrame(tick);
     }
-    requestAnimationFrame(tick);
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
   }, [target, duration, enabled]);
   return count;
 }

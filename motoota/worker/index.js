@@ -31,7 +31,7 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Expose-Headers': 'x-cds-content-exists',
+  'Access-Control-Expose-Headers': 'x-cds-content-exists, X-Response-Timestamp',
 };
 
 function jsonResponse(body, status = 200, extra = {}) {
@@ -39,7 +39,7 @@ function jsonResponse(body, status = 200, extra = {}) {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'X-Response-Time': new Date().toISOString(),
+      'X-Response-Timestamp': new Date().toISOString(),
       ...CORS_HEADERS,
       ...extra,
     },
@@ -93,6 +93,7 @@ async function handleApiCheck(request) {
   }
 
   const targetUrl = `https://${host}/cds/upgrade/1/check/ctx/${context}/key/${guid}`;
+  const startTime = Date.now();
 
   try {
     const upstream = await fetch(targetUrl, {
@@ -102,6 +103,7 @@ async function handleApiCheck(request) {
     });
 
     const data = await upstream.text();
+    const elapsed = Date.now() - startTime;
 
     const responseHeaders = {
       'Content-Type': upstream.headers.get('Content-Type') || 'application/json; charset=utf-8',
@@ -118,7 +120,8 @@ async function handleApiCheck(request) {
       headers: {
         ...responseHeaders,
         ...CORS_HEADERS,
-        'X-Response-Time': new Date().toISOString(),
+        'X-Response-Timestamp': new Date().toISOString(),
+        'X-Upstream-Duration-Ms': String(elapsed),
         'Cache-Control': 'no-store',
       },
     });
@@ -149,6 +152,7 @@ export default {
       return jsonResponse({
         service: 'MotoOTA API',
         status: 'ok',
+        version: '1.1.0',
         allowedHosts: ALLOWED_HOSTS,
       });
     }

@@ -93,8 +93,13 @@ async function postApiCheck(
       );
     }
 
-    if (data.error && typeof data.error === 'string') {
-      throw new Error(`Server error: ${data.error}`);
+    if (data.error) {
+      const errMsg = typeof data.error === 'string'
+        ? data.error
+        : typeof data.error === 'object' && data.error !== null && 'message' in (data.error as Record<string, unknown>)
+          ? String((data.error as Record<string, unknown>).message)
+          : JSON.stringify(data.error);
+      throw new Error(`Server error: ${errMsg}`);
     }
 
     const headers: Record<string, string> = {};

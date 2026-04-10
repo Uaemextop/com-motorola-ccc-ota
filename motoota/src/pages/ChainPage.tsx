@@ -245,6 +245,7 @@ export default function ChainPage() {
                       </h4>
                       <button
                         onClick={() => setSelectedStep(null)}
+                        aria-label="Cerrar detalle"
                         className="rounded-lg p-1 text-gray-500 transition-colors hover:bg-white/5 hover:text-white"
                       >
                         <X className="h-4 w-4" />

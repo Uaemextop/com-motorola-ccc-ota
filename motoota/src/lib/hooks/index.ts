@@ -1,6 +1,6 @@
 /* ── Custom Hooks ───────────────────────────────────────────── */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { checkUpdate, walkChain, scanCarriers } from '@/lib/api/client';
 import { getServerById } from '@/lib/api/servers';
 import { useAppStore } from '@/lib/store';
@@ -93,6 +93,19 @@ export function useCarrierScan() {
     useAppStore();
   const [scanning, setScanning] = useState(false);
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mountedRef = useRef(false);
+
+  // Track mounted state and cleanup flush timer on unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (flushTimer.current) {
+        clearTimeout(flushTimer.current);
+        flushTimer.current = null;
+      }
+    };
+  }, []);
 
   const scan = useCallback(
     async (guid?: string, carriers?: Carrier[], walkChains = true) => {
@@ -113,10 +126,12 @@ export function useCarrierScan() {
         const accumulated: ScanResult[] = [];
 
         const scheduleFlush = () => {
-          if (!flushTimer.current) {
+          if (!flushTimer.current && mountedRef.current) {
             flushTimer.current = setTimeout(() => {
               flushTimer.current = null;
-              setScanResults([...accumulated]);
+              if (mountedRef.current) {
+                setScanResults([...accumulated]);
+              }
             }, 150);
           }
         };
@@ -127,7 +142,7 @@ export function useCarrierScan() {
           concurrency: 20,
           walkOpenChains: walkChains,
           onProgress: (completed: number, total: number, result: ScanResult) => {
-            setScanProgress({ completed, total });
+            if (mountedRef.current) setScanProgress({ completed, total });
             accumulated.push(result);
             scheduleFlush();
           },
@@ -139,15 +154,17 @@ export function useCarrierScan() {
           clearTimeout(flushTimer.current);
           flushTimer.current = null;
         }
-        setScanResults(results);
+        if (mountedRef.current) setScanResults(results);
         return results;
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Error desconocido';
-        setError(msg);
+        if (mountedRef.current) setError(msg);
         return [];
       } finally {
-        setScanning(false);
-        setLoading(false);
+        if (mountedRef.current) {
+          setScanning(false);
+          setLoading(false);
+        }
       }
     },
     [config, setScanResults, setScanProgress, setLoading, setError],
