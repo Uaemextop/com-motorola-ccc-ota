@@ -78,10 +78,10 @@ export default function CheckPage() {
   }, [config.guid, config.carrier, config.serial, reset]);
 
   /* Only subscribe to form changes when request preview is visible */
-  const watchedValues = showRequest ? watch() : null;
-  const watchedGuid = watchedValues?.guid ?? getValues('guid') ?? '';
-  const watchedCarrier = watchedValues?.carrier ?? getValues('carrier') ?? '';
-  const watchedSerial = watchedValues?.serial ?? getValues('serial') ?? '';
+  const formValues = showRequest ? watch() : getValues();
+  const watchedGuid = formValues.guid ?? '';
+  const watchedCarrier = formValues.carrier ?? '';
+  const watchedSerial = formValues.serial ?? '';
 
   const onSubmit = async (data: FormData) => {
     updateConfig({ guid: data.guid, carrier: data.carrier, serial: data.serial || '' });

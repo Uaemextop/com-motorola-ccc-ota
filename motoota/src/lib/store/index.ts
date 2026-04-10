@@ -101,6 +101,8 @@ export const useAppStore = create<AppState>()(
 );
 
 /* ── Listen for browser back/forward (popstate) ─────────────── */
+/* This listener is intentionally module-scoped — it persists for the lifetime
+   of the SPA. The store is a singleton so cleanup is unnecessary. */
 if (typeof window !== 'undefined') {
   window.addEventListener('popstate', () => {
     const page = pageFromHash();

@@ -69,11 +69,10 @@ export default function CarrierSelect({ value, onChange, error }: CarrierSelectP
   }, [filtered]);
 
   /* Only carrier items for keyboard navigation */
-  const carrierIndices = useMemo(() => {
-    const indices: number[] = [];
-    flatItems.forEach((item, i) => { if (item.kind === 'carrier') indices.push(i); });
-    return indices;
-  }, [flatItems]);
+  const carrierIndices = useMemo(
+    () => flatItems.reduce<number[]>((acc, item, i) => (item.kind === 'carrier' ? [...acc, i] : acc), []),
+    [flatItems],
+  );
 
   /* ── Virtual scroll computation ───────────────────────────── */
   const itemOffsets = useMemo(() => {
@@ -335,7 +334,7 @@ export default function CarrierSelect({ value, onChange, error }: CarrierSelectP
                         isSelected && 'bg-blue-500/10',
                         isHighlighted && !isSelected && 'bg-white/5',
                       )}
-                      style={{ position: 'absolute', top, left: 0, right: 0, height: ITEM_HEIGHT, display: 'flex', alignItems: 'center' }}
+                      style={{ position: 'absolute', top, left: 0, right: 0, height: ITEM_HEIGHT }}
                     >
                       <span
                         className={cn(
