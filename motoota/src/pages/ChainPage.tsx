@@ -12,19 +12,20 @@ import {
   Copy,
   ChevronDown,
   X,
-  FileText,
   Tag,
-  Clock,
-  ExternalLink,
   ClipboardList,
 } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
 import CarrierSelect from '@/components/ui/CarrierSelect';
 import Spinner from '@/components/ui/Spinner';
+import AttrCell from '@/components/ui/AttrCell';
+import DownloadButton from '@/components/ui/DownloadButton';
+import ResourceUrlList from '@/components/ui/ResourceUrlList';
+import ReleaseNotes from '@/components/ui/ReleaseNotes';
 import { showToast } from '@/components/ui/Toast';
 import { useChainWalk } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
-import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename, copyToClipboard } from '@/lib/utils';
+import { formatBytes, cn, buildDownloadFilename, copyToClipboard } from '@/lib/utils';
 import type { CheckResponse } from '@/lib/types';
 
 const schema = z.object({
@@ -275,14 +276,8 @@ export default function ChainPage() {
 
                     {/* Package ID */}
                     {selected.content.packageId && (
-                      <div className="mb-4 rounded-lg bg-white/[0.02] px-3 py-2">
-                        <p className="text-[9px] uppercase tracking-wider text-gray-500">Package ID</p>
-                        <div className="mt-0.5 flex items-center gap-1.5">
-                          <p className="flex-1 truncate font-mono text-[11px] text-gray-300">{selected.content.packageId}</p>
-                          <button onClick={() => handleCopy(selected.content!.packageId)} className="text-gray-500 hover:text-white">
-                            <Copy className="h-3 w-3" />
-                          </button>
-                        </div>
+                      <div className="mb-4">
+                        <AttrCell label="Package ID" value={selected.content.packageId} mono copy={handleCopy} />
                       </div>
                     )}
 
@@ -300,63 +295,19 @@ export default function ChainPage() {
                           <Download className="h-3.5 w-3.5 text-emerald-400" />
                           Descargas ({filtered.length})
                         </h5>
-                        {primaryUrl && (
-                          <a
-                            href={primaryUrl}
-                            download={dlName}
-                            className={cn(
-                              'mb-2 flex items-center justify-center gap-2 rounded-xl px-5 py-2 text-xs font-semibold',
-                              'bg-gradient-to-r from-emerald-600 to-green-600 text-white',
-                              'shadow-lg shadow-emerald-500/20 transition-all hover:brightness-110',
-                            )}
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                            Descargar ({selected.content.sizeMB} MB)
-                          </a>
+                        {primaryUrl && dlName && (
+                          <div className="mb-2">
+                            <DownloadButton url={primaryUrl} filename={dlName} sizeMB={selected.content.sizeMB} compact />
+                          </div>
                         )}
-                        <div className="space-y-1">
-                          {filtered.map((resource, j) => (
-                            <div key={j} className="flex items-center gap-2 rounded-lg bg-white/[0.02] px-3 py-1.5 text-xs">
-                              <div className="flex items-center gap-1">
-                                {resource.tags.map((tag) => (
-                                  <span key={tag} className="rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-400">{tag}</span>
-                                ))}
-                                {resource.urlTtlSeconds > 0 && (
-                                  <span className="flex items-center gap-0.5 text-[10px] text-gray-600">
-                                    <Clock className="h-2.5 w-2.5" /> {resource.urlTtlSeconds}s
-                                  </span>
-                                )}
-                              </div>
-                              <a href={resource.url} download={dlName} className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
-                                {resource.url}
-                              </a>
-                              <button onClick={() => handleCopy(resource.url)} className="shrink-0 text-gray-500 hover:text-white">
-                                <Copy className="h-3 w-3" />
-                              </button>
-                              <a href={resource.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-gray-500 hover:text-white">
-                                <ExternalLink className="h-3 w-3" />
-                              </a>
-                            </div>
-                          ))}
-                        </div>
+                        <ResourceUrlList resources={filtered} compact onCopy={handleCopy} />
                       </div>
                       );
                     })()}
 
                     {/* Release notes */}
                     {selected.content.releaseNotes && (
-                      <div>
-                        <h5 className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-gray-400">
-                          <FileText className="h-3.5 w-3.5 text-violet-400" />
-                          Notas de la versión
-                        </h5>
-                        <div className="rounded-lg border border-white/5 bg-black/20 p-4">
-                          <div
-                            className="prose prose-sm prose-invert max-w-none [&_h3]:text-base [&_h3]:font-semibold [&_h3]:text-violet-300 [&_p]:text-gray-300 [&_p]:leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: sanitizeReleaseNotes(selected.content.releaseNotes) }}
-                          />
-                        </div>
-                      </div>
+                      <ReleaseNotes html={selected.content.releaseNotes} />
                     )}
                   </GlassCard>
                 </motion.div>
@@ -369,31 +320,3 @@ export default function ChainPage() {
   );
 }
 
-/* ── AttrCell: compact attribute cell ────────────────────────── */
-function AttrCell({
-  label,
-  value,
-  mono,
-  copy,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  copy?: (v: string) => void;
-}) {
-  return (
-    <div className="rounded-lg bg-white/[0.02] px-3 py-2">
-      <p className="text-[9px] uppercase tracking-wider text-gray-500">{label}</p>
-      <div className="mt-0.5 flex items-center gap-1">
-        <p className={cn('flex-1 truncate text-gray-200', mono && 'font-mono text-[11px]')}>
-          {value || '—'}
-        </p>
-        {copy && value && (
-          <button onClick={() => copy(value)} aria-label={`Copiar ${label}`} className="shrink-0 text-gray-500 hover:text-white">
-            <Copy className="h-2.5 w-2.5" />
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}

@@ -17,10 +17,7 @@ import {
   ArrowRight,
   Download,
   Copy,
-  FileText,
   X,
-  Clock,
-  ExternalLink,
   Link2,
   ArrowUpDown,
   ArrowUp,
@@ -31,11 +28,15 @@ import GlassCard from '@/components/ui/GlassCard';
 import Spinner from '@/components/ui/Spinner';
 import ProgressBar from '@/components/ui/ProgressBar';
 import StatusBadge from '@/components/ui/StatusBadge';
+import AttrCell from '@/components/ui/AttrCell';
+import DownloadButton from '@/components/ui/DownloadButton';
+import ResourceUrlList from '@/components/ui/ResourceUrlList';
+import ReleaseNotes from '@/components/ui/ReleaseNotes';
 import { showToast } from '@/components/ui/Toast';
 import { useCarrierScan } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
 import { CARRIERS, getUniqueRegions } from '@/lib/api/carriers';
-import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename, copyToClipboard, exportScanResultsToCsv } from '@/lib/utils';
+import { formatBytes, cn, buildDownloadFilename, copyToClipboard, exportScanResultsToCsv } from '@/lib/utils';
 import type { CarrierStatus, ScanResult, CheckResponse } from '@/lib/types';
 
 const schema = z.object({
@@ -494,9 +495,9 @@ export default function ScanPage() {
                           </span>
                         </div>
                         <div className="grid grid-cols-3 gap-2 text-xs">
-                          <CellAttr label="Tamaño" value={formatBytes(selectedResult.response.content.sizeBytes)} />
-                          <CellAttr label="Tipo" value={selectedResult.response.content.updateType} />
-                          <CellAttr label="Modelo" value={selectedResult.response.content.model} />
+                          <AttrCell label="Tamaño" value={formatBytes(selectedResult.response.content.sizeBytes)} compact />
+                          <AttrCell label="Tipo" value={selectedResult.response.content.updateType} compact />
+                          <AttrCell label="Modelo" value={selectedResult.response.content.model} compact />
                         </div>
                       </div>
                     )}
@@ -584,7 +585,6 @@ function StepDetail({
   networkTag: string;
   copyToClipboard: (text: string) => void;
 }) {
-  const [showNotes, setShowNotes] = useState(false);
   if (!step.content) return null;
 
   const filtered = step.contentResources.filter((r) =>
@@ -606,115 +606,30 @@ function StepDetail({
       </h6>
 
       <div className="mb-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-        <CellAttr label="Tamaño" value={formatBytes(step.content.sizeBytes)} />
-        <CellAttr label="Tipo" value={step.content.updateType} />
-        <CellAttr label="Modelo" value={step.content.model} />
-        <CellAttr label="Fase" value={step.content.deploymentPhase} />
-        <CellAttr label="GUID destino" value={step.content.targetGuid} mono copy={copyToClipboard} />
-        <CellAttr label="MD5" value={step.content.md5} mono copy={copyToClipboard} />
+        <AttrCell label="Tamaño" value={formatBytes(step.content.sizeBytes)} compact />
+        <AttrCell label="Tipo" value={step.content.updateType} compact />
+        <AttrCell label="Modelo" value={step.content.model} compact />
+        <AttrCell label="Fase" value={step.content.deploymentPhase} compact />
+        <AttrCell label="GUID destino" value={step.content.targetGuid} mono compact copy={copyToClipboard} />
+        <AttrCell label="MD5" value={step.content.md5} mono compact copy={copyToClipboard} />
       </div>
 
       {/* Download */}
       {filtered.length > 0 && (
         <div className="mb-3">
           {primaryUrl && (
-            <a
-              href={primaryUrl}
-              download={dlName}
-              className={cn(
-                'mb-2 flex items-center justify-center gap-2 rounded-xl px-5 py-2 text-xs font-semibold',
-                'bg-gradient-to-r from-emerald-600 to-green-600 text-white',
-                'shadow-lg shadow-emerald-500/20 transition-all hover:brightness-110',
-              )}
-            >
-              <Download className="h-3.5 w-3.5" />
-              Descargar ({step.content.sizeMB} MB)
-            </a>
+            <div className="mb-2">
+              <DownloadButton url={primaryUrl} filename={dlName} sizeMB={step.content.sizeMB} compact />
+            </div>
           )}
-          <div className="space-y-1">
-            {filtered.map((resource, j) => (
-              <div key={j} className="flex items-center gap-2 rounded-lg bg-white/[0.02] px-3 py-1.5 text-[10px]">
-                <div className="flex items-center gap-1">
-                  {resource.tags.map((tag) => (
-                    <span key={tag} className="rounded-full bg-blue-500/10 px-1.5 py-0.5 font-medium text-blue-400">{tag}</span>
-                  ))}
-                  {resource.urlTtlSeconds > 0 && (
-                    <span className="flex items-center gap-0.5 text-gray-600">
-                      <Clock className="h-2.5 w-2.5" /> {resource.urlTtlSeconds}s
-                    </span>
-                  )}
-                </div>
-                <a href={resource.url} download={dlName} className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
-                  {resource.url}
-                </a>
-                <button onClick={() => copyToClipboard(resource.url)} className="shrink-0 text-gray-500 hover:text-white">
-                  <Copy className="h-3 w-3" />
-                </button>
-                <a href={resource.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-gray-500 hover:text-white">
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </div>
-            ))}
-          </div>
+          <ResourceUrlList resources={filtered} compact onCopy={copyToClipboard} />
         </div>
       )}
 
       {/* Release notes */}
       {step.content.releaseNotes && (
-        <div>
-          <button onClick={() => setShowNotes(!showNotes)} aria-expanded={showNotes} className="flex w-full items-center justify-between text-xs">
-            <span className="flex items-center gap-1.5 font-semibold text-gray-400">
-              <FileText className="h-3.5 w-3.5 text-violet-400" />
-              Notas de la versión
-            </span>
-            <ChevronDown className={cn('h-3.5 w-3.5 text-gray-500 transition-transform', showNotes && 'rotate-180')} />
-          </button>
-          <AnimatePresence>
-            {showNotes && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="mt-2 overflow-hidden rounded-lg border border-white/5 bg-black/20 p-3"
-              >
-                <div
-                  className="prose prose-sm prose-invert max-w-none [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:text-violet-300 [&_p]:text-sm [&_p]:text-gray-300 [&_p]:leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: sanitizeReleaseNotes(step.content.releaseNotes) }}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        <ReleaseNotes html={step.content.releaseNotes} />
       )}
     </motion.div>
-  );
-}
-
-/* ── Compact attribute cell ────────────────────────────────── */
-function CellAttr({
-  label,
-  value,
-  mono,
-  copy,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  copy?: (v: string) => void;
-}) {
-  return (
-    <div className="rounded-lg bg-white/[0.02] px-2.5 py-1.5">
-      <p className="text-[10px] uppercase tracking-wider text-gray-500">{label}</p>
-      <div className="mt-0.5 flex items-center gap-1">
-        <p className={cn('flex-1 truncate text-gray-200', mono && 'font-mono text-[10px]')}>
-          {value || '—'}
-        </p>
-        {copy && value && (
-          <button onClick={() => copy(value)} aria-label={`Copiar ${label}`} className="shrink-0 text-gray-500 hover:text-white">
-            <Copy className="h-2.5 w-2.5" />
-          </button>
-        )}
-      </div>
-    </div>
   );
 }
