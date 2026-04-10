@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import GlassCard from '@/components/ui/GlassCard';
 import CarrierSelect from '@/components/ui/CarrierSelect';
+import JsonViewer from '@/components/ui/JsonViewer';
 import { showToast } from '@/components/ui/Toast';
 import { useAppStore } from '@/lib/store';
 import { SERVERS } from '@/lib/api/servers';
@@ -197,9 +198,7 @@ export default function ConfigPage() {
       {/* Current config display */}
       <GlassCard className="space-y-2">
         <h4 className="text-sm font-semibold text-gray-400">Configuración actual (JSON)</h4>
-        <pre className="overflow-auto rounded-lg border border-white/5 bg-black/20 p-3 font-mono text-xs text-gray-400">
-          {JSON.stringify(config, null, 2)}
-        </pre>
+        <JsonViewer data={config} accent="violet" maxHeight="300px" />
       </GlassCard>
     </div>
   );

@@ -28,6 +28,7 @@ import AttrCell from '@/components/ui/AttrCell';
 import DownloadButton from '@/components/ui/DownloadButton';
 import ResourceUrlList from '@/components/ui/ResourceUrlList';
 import ReleaseNotes from '@/components/ui/ReleaseNotes';
+import JsonViewer from '@/components/ui/JsonViewer';
 import { showToast } from '@/components/ui/Toast';
 import { useOtaCheck } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
@@ -241,9 +242,7 @@ export default function CheckPage() {
                     <pre className="mb-2 font-mono text-gray-500">
                       {Object.entries(DEFAULT_HEADERS).map(([k, v]) => `${k}: ${v}`).join('\n')}
                     </pre>
-                    <pre className="font-mono text-gray-500">
-                      {JSON.stringify(buildPayload(watchedCarrier || '<CARRIER>', watchedGuid || '<GUID>', { serial: watchedSerial || 'x' }), null, 2)}
-                    </pre>
+                    <JsonViewer data={buildPayload(watchedCarrier || '<CARRIER>', watchedGuid || '<GUID>', { serial: watchedSerial || 'x' })} accent="blue" maxHeight="300px" />
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -453,7 +452,7 @@ export default function CheckPage() {
                           <pre className="mt-1 font-mono text-gray-500">
                             {Object.entries(DEFAULT_HEADERS).map(([k, v]) => `${k}: ${v}`).join('\n')}
                           </pre>
-                          <pre className="mt-1 font-mono text-gray-500">{JSON.stringify(requestLog.body, null, 2)}</pre>
+                          <JsonViewer data={requestLog.body} accent="blue" maxHeight="200px" className="mt-1" />
                         </div>
                         <div className="rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3">
                           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">Respuesta</p>
@@ -491,14 +490,14 @@ export default function CheckPage() {
               </button>
               <AnimatePresence>
                 {showRaw && (
-                  <motion.pre
+                  <motion.div
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: 'auto', opacity: 1 }}
                     exit={{ height: 0, opacity: 0 }}
-                    className="max-h-[400px] overflow-auto rounded-lg border border-white/5 bg-black/30 p-3 font-mono text-xs text-gray-500"
+                    className="overflow-hidden"
                   >
-                    {JSON.stringify(lastCheck.raw, null, 2)}
-                  </motion.pre>
+                    <JsonViewer data={lastCheck.raw} accent="emerald" maxHeight="400px" />
+                  </motion.div>
                 )}
               </AnimatePresence>
             </GlassCard>

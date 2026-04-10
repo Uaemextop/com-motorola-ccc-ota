@@ -137,6 +137,29 @@ tbody tr {
   animation-fill-mode: both;
 }
 
+/* ── JSON Syntax Colors ────────────────────────────────────── */
+
+.json-key {
+  color: #93c5fd; /* blue-300 */
+}
+
+.json-string {
+  color: #6ee7b7; /* emerald-300 */
+}
+
+.json-number {
+  color: #fcd34d; /* amber-300 */
+}
+
+.json-bool {
+  color: #c4b5fd; /* violet-300 */
+}
+
+.json-null {
+  color: #6b7280; /* gray-500 */
+  font-style: italic;
+}
+
 /* ── Gradient text ─────────────────────────────────────────── */
 
 .gradient-text {
