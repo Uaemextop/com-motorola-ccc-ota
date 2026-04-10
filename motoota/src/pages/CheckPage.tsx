@@ -62,6 +62,7 @@ export default function CheckPage() {
     control,
     formState: { errors },
     watch,
+    getValues,
     reset,
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -76,9 +77,11 @@ export default function CheckPage() {
     reset({ guid: config.guid, carrier: config.carrier, serial: config.serial });
   }, [config.guid, config.carrier, config.serial, reset]);
 
-  const watchedGuid = watch('guid');
-  const watchedCarrier = watch('carrier');
-  const watchedSerial = watch('serial');
+  /* Only subscribe to form changes when request preview is visible */
+  const watchedValues = showRequest ? watch() : null;
+  const watchedGuid = watchedValues?.guid ?? getValues('guid') ?? '';
+  const watchedCarrier = watchedValues?.carrier ?? getValues('carrier') ?? '';
+  const watchedSerial = watchedValues?.serial ?? getValues('serial') ?? '';
 
   const onSubmit = async (data: FormData) => {
     updateConfig({ guid: data.guid, carrier: data.carrier, serial: data.serial || '' });

@@ -132,6 +132,11 @@ tbody tr {
   animation: fade-in 0.4s ease-out both;
 }
 
+/* Support animation delay via inline style */
+[style*="animation-delay"] {
+  animation-fill-mode: both;
+}
+
 /* ── Gradient text ─────────────────────────────────────────── */
 
 .gradient-text {
