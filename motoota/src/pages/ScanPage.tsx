@@ -34,7 +34,7 @@ import { showToast } from '@/components/ui/Toast';
 import { useCarrierScan } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
 import { CARRIERS, getUniqueRegions } from '@/lib/api/carriers';
-import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename } from '@/lib/utils';
+import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename, copyToClipboard } from '@/lib/utils';
 import type { CarrierStatus, ScanResult, CheckResponse } from '@/lib/types';
 
 const schema = z.object({
@@ -164,13 +164,9 @@ export default function ScanPage() {
     ? scanResults.find((r) => r.carrier.code === selectedCarrier) ?? null
     : null;
 
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      showToast('Copiado al portapapeles', 'success');
-    } catch {
-      showToast('No se pudo copiar al portapapeles', 'error');
-    }
+  const handleCopy = async (text: string) => {
+    const success = await copyToClipboard(text);
+    showToast(success ? 'Copiado al portapapeles' : 'No se pudo copiar al portapapeles', success ? 'success' : 'error');
   };
 
   const toggleSort = (field: SortField) => {
@@ -531,7 +527,7 @@ export default function ScanPage() {
                               index={selectedStep}
                               carrier={selectedResult.carrier.code}
                               networkTag={config.downloadNetwork === 'wifi' ? 'WIFI' : 'CELL'}
-                              copyToClipboard={copyToClipboard}
+                              copyToClipboard={handleCopy}
                             />
                           )}
                         </AnimatePresence>
@@ -545,7 +541,7 @@ export default function ScanPage() {
                         index={0}
                         carrier={selectedResult.carrier.code}
                         networkTag={config.downloadNetwork === 'wifi' ? 'WIFI' : 'CELL'}
-                        copyToClipboard={copyToClipboard}
+                        copyToClipboard={handleCopy}
                       />
                     )}
                   </GlassCard>

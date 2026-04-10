@@ -23,7 +23,7 @@ import Spinner from '@/components/ui/Spinner';
 import { showToast } from '@/components/ui/Toast';
 import { useChainWalk } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
-import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename } from '@/lib/utils';
+import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename, copyToClipboard } from '@/lib/utils';
 import type { CheckResponse } from '@/lib/types';
 
 const schema = z.object({
@@ -63,13 +63,9 @@ export default function ChainPage() {
     }
   };
 
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      showToast('Copiado al portapapeles', 'success');
-    } catch {
-      showToast('No se pudo copiar al portapapeles', 'error');
-    }
+  const handleCopy = async (text: string) => {
+    const success = await copyToClipboard(text);
+    showToast(success ? 'Copiado al portapapeles' : 'No se pudo copiar al portapapeles', success ? 'success' : 'error');
   };
 
   const selected: CheckResponse | null = selectedStep !== null ? chain[selectedStep] ?? null : null;
@@ -245,8 +241,8 @@ export default function ChainPage() {
                       <AttrCell label="Tipo" value={selected.content.updateType} />
                       <AttrCell label="Modelo" value={selected.content.model} />
                       <AttrCell label="Fase" value={selected.content.deploymentPhase} />
-                      <AttrCell label="GUID destino" value={selected.content.targetGuid} mono copy={copyToClipboard} />
-                      <AttrCell label="MD5" value={selected.content.md5} mono copy={copyToClipboard} />
+                      <AttrCell label="GUID destino" value={selected.content.targetGuid} mono copy={handleCopy} />
+                      <AttrCell label="MD5" value={selected.content.md5} mono copy={handleCopy} />
                     </div>
 
                     {/* Package ID */}
@@ -255,7 +251,7 @@ export default function ChainPage() {
                         <p className="text-[9px] uppercase tracking-wider text-gray-500">Package ID</p>
                         <div className="mt-0.5 flex items-center gap-1.5">
                           <p className="flex-1 truncate font-mono text-[11px] text-gray-300">{selected.content.packageId}</p>
-                          <button onClick={() => copyToClipboard(selected.content!.packageId)} className="text-gray-500 hover:text-white">
+                          <button onClick={() => handleCopy(selected.content!.packageId)} className="text-gray-500 hover:text-white">
                             <Copy className="h-3 w-3" />
                           </button>
                         </div>
@@ -306,7 +302,7 @@ export default function ChainPage() {
                               <a href={resource.url} download={dlName} className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
                                 {resource.url}
                               </a>
-                              <button onClick={() => copyToClipboard(resource.url)} className="shrink-0 text-gray-500 hover:text-white">
+                              <button onClick={() => handleCopy(resource.url)} className="shrink-0 text-gray-500 hover:text-white">
                                 <Copy className="h-3 w-3" />
                               </button>
                               <a href={resource.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-gray-500 hover:text-white">

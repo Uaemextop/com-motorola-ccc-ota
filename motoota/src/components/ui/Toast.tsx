@@ -49,7 +49,7 @@ export function ToastContainer() {
   }, [addToast]);
 
   return (
-    <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3">
+    <div className="fixed bottom-6 right-6 z-[100] flex flex-col gap-3 sm:bottom-6 sm:right-6 max-sm:bottom-4 max-sm:right-4 max-sm:left-4" role="status" aria-live="polite">
       <AnimatePresence>
         {toasts.map((toast) => {
           const Icon = ICONS[toast.type];
@@ -68,6 +68,7 @@ export function ToastContainer() {
               <p className="text-sm font-medium">{toast.message}</p>
               <button
                 onClick={() => setToasts((prev) => prev.filter((t) => t.id !== toast.id))}
+                aria-label="Cerrar notificación"
                 className="ml-2 rounded p-1 transition-colors hover:bg-white/10"
               >
                 <X className="h-3.5 w-3.5" />

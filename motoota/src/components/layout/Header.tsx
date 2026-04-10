@@ -33,6 +33,7 @@ export default function Header() {
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-white/5 bg-[#0d0d1a]/80 px-4 backdrop-blur-xl sm:px-6">
       <button
         onClick={toggleSidebar}
+        aria-label="Abrir menú de navegación"
         className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-white/5 hover:text-white lg:hidden"
       >
         <Menu className="h-5 w-5" />

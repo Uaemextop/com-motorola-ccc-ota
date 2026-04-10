@@ -10,10 +10,11 @@ export function cn(...inputs: ClassValue[]) {
 
 /** Format bytes to human-readable string */
 export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
   if (bytes === 0) return '0 B';
   const k = 1024;
   const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
 }
 
@@ -45,8 +46,34 @@ export function buildDownloadFilename(
 
 /** Download a cross-origin file by opening it in a new tab */
 export function downloadFile(url: string, _filename: string): Promise<void> {
+  if (!/^https?:\/\//i.test(url)) {
+    return Promise.reject(new Error('Invalid URL scheme — only HTTP/HTTPS allowed'));
+  }
   window.open(url, '_blank', 'noopener,noreferrer');
   return Promise.resolve();
+}
+
+/** Copy text to clipboard with fallback for older browsers */
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    // Fallback: create a temporary textarea
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const success = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return success;
+  } catch {
+    return false;
+  }
 }
 
 /* ── Sanitize release notes HTML ─────────────────────────────── */

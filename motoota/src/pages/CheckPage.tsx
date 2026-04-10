@@ -31,7 +31,7 @@ import { useOtaCheck } from '@/lib/hooks';
 import { useAppStore } from '@/lib/store';
 import { classifyCarrierStatus } from '@/lib/api/response';
 import { getServerById } from '@/lib/api/servers';
-import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename, downloadFile } from '@/lib/utils';
+import { formatBytes, cn, sanitizeReleaseNotes, buildDownloadFilename, downloadFile, copyToClipboard } from '@/lib/utils';
 import { DEFAULT_HEADERS, buildCheckURL, buildPayload } from '@/lib/api/endpoints';
 import { getLastRequestLog } from '@/lib/api/client';
 
@@ -110,13 +110,9 @@ export default function CheckPage() {
     setShowReleaseNotes(false);
   };
 
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      showToast('Copiado al portapapeles', 'success');
-    } catch {
-      showToast('No se pudo copiar al portapapeles', 'error');
-    }
+  const handleCopy = async (text: string) => {
+    const success = await copyToClipboard(text);
+    showToast(success ? 'Copiado al portapapeles' : 'No se pudo copiar al portapapeles', success ? 'success' : 'error');
   };
 
   const server = getServerById(config.server);
@@ -368,8 +364,8 @@ export default function CheckPage() {
                     <Attr label="Tipo" value={lastCheck.content.updateType} />
                     <Attr label="Modelo" value={lastCheck.content.model} />
                     <Attr label="Fase" value={lastCheck.content.deploymentPhase} />
-                    <Attr label="GUID destino" value={lastCheck.content.targetGuid} mono copy={copyToClipboard} />
-                    <Attr label="MD5" value={lastCheck.content.md5} mono copy={copyToClipboard} />
+                    <Attr label="GUID destino" value={lastCheck.content.targetGuid} mono copy={handleCopy} />
+                    <Attr label="MD5" value={lastCheck.content.md5} mono copy={handleCopy} />
                   </div>
 
                   {/* Package ID (full width) */}
@@ -378,7 +374,7 @@ export default function CheckPage() {
                       <p className="text-[9px] uppercase tracking-wider text-gray-500">Package ID</p>
                       <div className="mt-0.5 flex items-center gap-1.5">
                         <p className="flex-1 truncate font-mono text-[11px] text-gray-300">{lastCheck.content.packageId}</p>
-                        <button onClick={() => copyToClipboard(lastCheck.content!.packageId)} className="text-gray-500 hover:text-white">
+                        <button onClick={() => handleCopy(lastCheck.content!.packageId)} className="text-gray-500 hover:text-white">
                           <Copy className="h-3 w-3" />
                         </button>
                       </div>
@@ -434,7 +430,7 @@ export default function CheckPage() {
                       <a href={resource.url} download={dlName} className="flex-1 truncate font-mono text-blue-300 hover:text-blue-200">
                         {resource.url}
                       </a>
-                      <button onClick={() => copyToClipboard(resource.url)} className="shrink-0 text-gray-500 hover:text-white">
+                      <button onClick={() => handleCopy(resource.url)} className="shrink-0 text-gray-500 hover:text-white">
                         <Copy className="h-3 w-3" />
                       </button>
                       <a href={resource.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-gray-500 hover:text-white">

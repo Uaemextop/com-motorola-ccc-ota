@@ -73,6 +73,7 @@ export default function Sidebar() {
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
+            aria-label="Cerrar menú de navegación"
             className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-white/5 hover:text-white lg:hidden"
           >
             <X className="h-5 w-5" />
