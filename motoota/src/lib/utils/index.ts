@@ -60,7 +60,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text);
       return true;
     }
-    // Fallback: create a temporary textarea
+    // Legacy fallback for browsers without Clipboard API (deprecated but intentional)
     const textarea = document.createElement('textarea');
     textarea.value = text;
     textarea.style.position = 'fixed';

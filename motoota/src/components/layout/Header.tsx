@@ -3,7 +3,7 @@
 import { Menu, Wifi, WifiOff, Keyboard } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Page } from '@/lib/types';
 
 const PAGE_TITLES: Record<string, string> = {
@@ -28,6 +28,7 @@ export default function Header() {
   const { currentPage, setPage, toggleSidebar, loading } = useAppStore();
   const [online, setOnline] = useState(navigator.onLine);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const shortcutsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const on = () => setOnline(true);
@@ -55,6 +56,25 @@ export default function Header() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [setPage]);
 
+  // Close shortcuts panel on click-outside or Escape
+  useEffect(() => {
+    if (!showShortcuts) return;
+    const handleClick = (e: MouseEvent) => {
+      if (shortcutsRef.current && !shortcutsRef.current.contains(e.target as Node)) {
+        setShowShortcuts(false);
+      }
+    };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowShortcuts(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [showShortcuts]);
+
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-white/5 bg-[#0d0d1a]/80 px-4 backdrop-blur-xl sm:px-6">
       <button
@@ -80,7 +100,7 @@ export default function Header() {
       )}
 
       {/* Keyboard shortcuts hint */}
-      <div className="relative hidden lg:block">
+      <div ref={shortcutsRef} className="relative hidden lg:block">
         <button
           onClick={() => setShowShortcuts(!showShortcuts)}
           aria-label="Ver atajos de teclado"

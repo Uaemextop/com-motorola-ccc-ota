@@ -67,7 +67,7 @@ const STATS = [
 function useCountUp(target: number, duration = 1200, enabled = true) {
   const [count, setCount] = useState(0);
   const startedRef = useRef(false);
-  const rafRef = useRef(0);
+  const rafRef = useRef(-1);
   useEffect(() => {
     if (!enabled || startedRef.current || target === 0) return;
     startedRef.current = true;
@@ -79,7 +79,7 @@ function useCountUp(target: number, duration = 1200, enabled = true) {
       if (progress < 1) rafRef.current = requestAnimationFrame(tick);
     }
     rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
+    return () => { if (rafRef.current >= 0) cancelAnimationFrame(rafRef.current); };
   }, [target, duration, enabled]);
   return count;
 }
