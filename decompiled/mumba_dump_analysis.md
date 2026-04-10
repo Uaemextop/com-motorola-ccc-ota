@@ -2,7 +2,8 @@
 
 **Date**: April 2026  
 **Dump**: https://github.com/Uaemextop/motorola_mumba_dump_2  
-**Device**: mumba_cn (codename: msi)  
+**Device**: mumba_cn (codename: msi) — **moto g100s (XT2537-4)**  
+**SoC**: Qualcomm Snapdragon 6s Gen 4  
 **Android**: 16 (Baklava), MYUI 8  
 **Build**: W1WAA36M.48-23-ST12.4 (test-keys)  
 **GUID**: `9f03d42e458cef2`  
@@ -148,13 +149,67 @@ This means:
 
 ---
 
+## EDGECAST Download Verification (lamu_g / moto g15)
+
+All 7 recent OTA packages verified downloadable from EDGECAST **without any authentication**:
+
+| Step | Version | Size | Status | Contents |
+|------|---------|------|--------|----------|
+| 3 | v65-5 → v100 | 134.1 MB | ✅ | payload.bin + metadata |
+| 4 | v100 → v114 | 883.3 MB | ✅ | payload.bin + metadata |
+| 5 | v114 → v124 | 68.4 MB | ✅ | payload.bin + metadata |
+| 6 | v124 → v137 | 75.9 MB | ✅ | payload.bin + metadata |
+| 7 | v137 → v137-2 | 22.2 MB | ✅ | payload.bin + metadata |
+| 8 | v137-2 → v137-10 | 27.3 MB | ✅ | payload.bin + metadata |
+| 9 | v137-10 → v137-10-3 | 18.5 MB | ✅ | payload.bin + metadata |
+
+All are A/B OTA ZIP packages with standard contents:
+- `payload.bin` (delta update, compressed)
+- `payload_properties.txt`
+- `META-INF/com/android/metadata.pb`
+- `care_map.pb`
+- `apex_info.pb`
+- `META-INF/com/android/otacert`
+
+## CDS Response Analysis (v36)
+
+CDS now returns `streamingData` in the check response with:
+- `header.FILE_HASH` — SHA-256 of payload.bin
+- `header.FILE_SIZE` — exact payload size  
+- `header.METADATA_HASH` — SHA-256 of metadata
+- `header.METADATA_SIZE` — metadata size
+- `additionalInfo.offset` — byte offset to payload start in ZIP
+- `abInstallType: "streamingOnAb"` — streaming A/B install
+
+**CDS no longer returns `contentResources[]` download URLs** in the check response (as of April 2026). The `/resources` endpoint returns `proceed=false`. This means:
+- EDGECAST direct download by `packageID` is the primary working method
+- Download URLs may require device-level verification (CID/Google auth) now
+
+## New Hex Keys from mumba 3c_ota
+
+| Key | Purpose |
+|-----|---------|
+| `d928bee85b45cffe7b0f21084dd3d20e` | X-Moto-Auth-Sign (file upload) |
+| `3071c8717539de5d5353f4c8cd59a032` | Unknown (new, not CDS auth) |
+| `7d73d21f1bd82c9e5268b6dcf9fde2cb` | Unknown (new, not CDS auth) |
+
+## store-ota.svcmot.com
+
+Active Apache/2.4.37 (Rocky Linux) server:
+- **POST /** → "Rejected: Duplicate file name." (expects unique filenames)
+- **POST /store** → "File Received" (accepts uploads with auth headers)
+- **POST /logs** → "File Received"
+- **POST /reports** → "File Received"
+- **Auth**: X-Moto-Auth-Sign + Secretkey headers
+- **No auth required** — accepts uploads even without auth headers
+
 ## Key Findings
 
-1. **mumba is a China-market device** (MYUI 8, china carrier, Android 16 Baklava)
+1. **mumba = moto g100s** (XT2537-4, Snapdragon 6s Gen 4, China market, Android 16 Baklava)
 2. **Same CDS infrastructure** as ROW devices — identical endpoints, auth, protocol
-3. **GUID `9f03d42e458cef2` is valid** but no OTA available (test/pre-release build)
-4. **Device Management (Argo) servers are up but empty** — no deployed API services
-5. **store-ota.svcmot.com is an active Apache upload server** (accepts POST with auth)
-6. **d2xbblc68nqw6k.cloudfront.net** is a locked S3/CloudFront bucket (needs signed URLs)
-7. **update_engine is standard AOSP** — no custom firmware download logic in native code
-8. **All OTA server logic lives in 3c_ota.apk** (Java/smali), not native binaries
+3. **GUID `9f03d42e458cef2` is valid** but no OTA available (pre-release build)
+4. **CDS no longer returns download URLs** in check response — EDGECAST is primary download path
+5. **7/9 OTA packages publicly downloadable** on EDGECAST without any auth
+6. **store-ota.svcmot.com is an active upload server** that accepts file uploads
+7. **Device Management (Argo) servers are up but empty** — no deployed API services
+8. **update_engine is standard AOSP** — all OTA logic in 3c_ota.apk (Java/smali)
